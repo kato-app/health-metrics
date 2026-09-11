@@ -1,7 +1,7 @@
 import type { CollectContext, MetricRow } from "../../core/metric.js";
 import { parseSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
 import { repoFullName, type GitHubSource, type RepoRef } from "../../sources/github/source.js";
-import { isPublishedRelease, toRow } from "./transform.js";
+import { toRow } from "./transform.js";
 
 /**
  * How far behind the newest published date in the sheet we keep paging.
@@ -23,7 +23,7 @@ export interface CollectOptions {
   readonly graceDays?: number;
 }
 
-/** Newest `published_at` already in the sheet, or undefined when the sheet is empty. */
+/** Newest `published_at` already in the sheet, or undefined when none of the rows carries one. */
 export function findWatermark(existingRows: readonly MetricRow[]): Date | undefined {
   let newest: Date | undefined;
   for (const row of existingRows) {
@@ -33,9 +33,10 @@ export function findWatermark(existingRows: readonly MetricRow[]): Date | undefi
   return newest;
 }
 
+/** Oldest first. `published_at` is a fixed-width UTC string, so plain comparison orders it chronologically. */
 function byPublishedThenId(a: MetricRow, b: MetricRow): number {
-  const byDate = String(a.published_at).localeCompare(String(b.published_at));
-  return byDate !== 0 ? byDate : Number(a.id) - Number(b.id);
+  if (a.published_at !== b.published_at) return String(a.published_at) < String(b.published_at) ? -1 : 1;
+  return Number(a.id) - Number(b.id);
 }
 
 export async function collectDeploymentFrequency(
@@ -46,6 +47,11 @@ export async function collectDeploymentFrequency(
   const { logger, existingRows } = context;
   const startDate = startOfUtcDay(options.startDate);
   const watermark = findWatermark(existingRows);
+  if (!watermark && existingRows.length > 0) {
+    logger.warn("Existing rows have no readable published_at; backfilling from the start date", {
+      existingRows: existingRows.length,
+    });
+  }
   const graceMs = (options.graceDays ?? DEFAULT_GRACE_DAYS) * DAY_MS;
   const pagingCutoff = watermark ? new Date(Math.max(startDate.getTime(), watermark.getTime() - graceMs)) : startDate;
   // Sheets may hand ids back as numbers or strings; compare as strings.
@@ -69,7 +75,7 @@ export async function collectDeploymentFrequency(
       // Listing is newest-created first, so everything after this is older than we care about.
       if (new Date(release.created_at) < pagingCutoff) break;
 
-      if (!isPublishedRelease(release)) {
+      if (release.draft || release.prerelease || release.published_at === null) {
         repoLogger.debug("Skipping unpublished release", { id: release.id, tag: release.tag_name });
         continue;
       }

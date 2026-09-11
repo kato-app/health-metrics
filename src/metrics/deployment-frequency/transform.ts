@@ -13,14 +13,11 @@ export const COLUMNS = [
   "html_url",
 ] as const;
 
-/** A release that has actually shipped: published, and neither a draft nor a prerelease. */
-export type PublishedRelease = GitHubRelease & { published_at: string };
-
-export function isPublishedRelease(release: GitHubRelease): release is PublishedRelease {
-  return !release.draft && !release.prerelease && release.published_at !== null;
-}
-
-export function toRow(repo: RepoRef, release: PublishedRelease): MetricRow {
+/** Maps a published release to a sheet row. Throws on a release that has no `published_at`. */
+export function toRow(repo: RepoRef, release: GitHubRelease): MetricRow {
+  if (release.published_at === null) {
+    throw new Error(`Release ${release.id} (${release.tag_name}) has not been published`);
+  }
   return {
     published_at: formatSheetDate(release.published_at),
     repo: repoFullName(repo),

@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { MetricRow } from "../src/core/metric.js";
 import { formatSheetDate, parseSheetDate } from "../src/core/sheet-date.js";
+import { noopLogger } from "../src/logging/logger.js";
 import { collectDeploymentFrequency, findWatermark } from "../src/metrics/deployment-frequency/collect.js";
 import { COLUMNS, toRow } from "../src/metrics/deployment-frequency/transform.js";
-import { noopLogger } from "../src/logging/logger.js";
+import { releaseSchema } from "../src/sources/github/source.js";
 import { FakeGitHubSource, release } from "./helpers/fakes.js";
 
 const kato = { owner: "kato-app", name: "kato" };
 const settings = { owner: "kato-app", name: "kato-settings" };
 const options = { repos: [kato, settings], startDate: "2026-01-01" };
-const ctx = (existingRows: Parameters<typeof findWatermark>[0] = []) => ({ existingRows, logger: noopLogger });
+const ctx = (existingRows: readonly MetricRow[] = []) => ({ existingRows, logger: noopLogger });
 
 describe("sheet dates", () => {
   it("formats ISO timestamps as UTC 'YYYY-MM-DD HH:MM:SS'", () => {
@@ -25,12 +27,17 @@ describe("sheet dates", () => {
   });
 });
 
+describe("releaseSchema", () => {
+  it("rejects a payload missing a field the metric depends on", () => {
+    const { published_at: _dropped, ...withoutPublishedAt } = release({ id: 1 });
+    assert.equal(releaseSchema.safeParse(withoutPublishedAt).success, false);
+    assert.equal(releaseSchema.safeParse(release({ id: 1 })).success, true);
+  });
+});
+
 describe("toRow", () => {
   it("maps a release to exactly the metric columns", () => {
-    const row = toRow(kato, {
-      ...release({ id: 385653988, tag_name: "v77.9", name: "v77.9", published_at: "2026-09-09T15:49:49Z" }),
-      published_at: "2026-09-09T15:49:49Z",
-    });
+    const row = toRow(kato, release({ id: 385653988, tag_name: "v77.9", name: "v77.9", published_at: "2026-09-09T15:49:49Z" }));
     assert.deepEqual(Object.keys(row), [...COLUMNS]);
     assert.deepEqual(row, {
       published_at: "2026-09-09 15:49:49",
@@ -45,8 +52,11 @@ describe("toRow", () => {
   });
 
   it("tolerates a missing author", () => {
-    const row = toRow(kato, { ...release({ id: 1, author: null }), published_at: "2026-03-01T12:00:00Z" });
-    assert.equal(row.author_login, null);
+    assert.equal(toRow(kato, release({ id: 1, author: null })).author_login, null);
+  });
+
+  it("refuses a release that has no published_at", () => {
+    assert.throws(() => toRow(kato, release({ id: 7, draft: true, published_at: null })), /not been published/);
   });
 });
 
@@ -59,6 +69,10 @@ describe("findWatermark", () => {
       { published_at: "2026-02-15 00:00:00", id: 2 },
     ];
     assert.equal(findWatermark(rows)?.toISOString(), "2026-03-01T00:00:00.000Z");
+  });
+
+  it("ignores rows whose published_at is not in the sheet format", () => {
+    assert.equal(findWatermark([{ published_at: "not a date", id: 1 }, { published_at: 45000, id: 2 }]), undefined);
   });
 });
 
@@ -116,7 +130,8 @@ describe("collectDeploymentFrequency", () => {
       kato: [
         release({ id: 300, published_at: "2026-06-10T10:00:00Z" }), // new
         release({ id: 200, published_at: "2026-06-01T10:00:00Z" }), // already present
-        release({ id: 150, published_at: "2026-05-20T10:00:00Z" }), // within grace window, missing: late-published draft
+        // Drafted before the watermark, published after it: only the grace window catches this one.
+        release({ id: 150, created_at: "2026-05-20T10:00:00Z", published_at: "2026-06-05T10:00:00Z" }),
         release({ id: 100, published_at: "2026-05-05T10:00:00Z" }), // already present, inside the window
         release({ id: 50, published_at: "2026-05-01T10:00:00Z" }), // older than the window: read, then paging stops
         release({ id: 40, published_at: "2026-03-01T10:00:00Z" }), // never read
@@ -144,6 +159,22 @@ describe("collectDeploymentFrequency", () => {
 
     assert.deepEqual(rows, []);
     assert.equal(github.yielded.get("kato"), 2);
+  });
+
+  it("backfills from the start date when existing rows carry no readable watermark", async () => {
+    const existing = [{ published_at: "garbage", id: 2 }];
+    const github = new FakeGitHubSource({
+      kato: [release({ id: 2, published_at: "2026-03-01T10:00:00Z" }), release({ id: 1, published_at: "2026-02-01T10:00:00Z" })],
+      "kato-settings": [],
+    });
+
+    const rows = await collectDeploymentFrequency(github, options, ctx(existing));
+
+    // Id 2 is still de-duplicated; id 1 is recovered.
+    assert.deepEqual(
+      rows.map((r) => r.id),
+      [1],
+    );
   });
 
   it("orders rows by published date then id when two publish in the same second", async () => {

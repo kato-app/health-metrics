@@ -63,16 +63,14 @@ async function runCommand(name: string | undefined, opts: RunCommandOptions): Pr
     const sink = await createSink(logger);
     const results = await runMetrics(metrics, { sink, logger, dryRun: opts.dryRun ?? false });
 
-    const failed = results.filter((r) => r.status === "failed");
-    const sum = (pick: (r: Extract<(typeof results)[number], { status: "ok" }>) => number) =>
-      results.reduce((n, r) => n + (r.status === "ok" ? pick(r) : 0), 0);
+    const succeeded = results.filter((r) => r.status === "ok");
     logger.info("Run complete", {
       metrics: results.length,
-      failed: failed.length,
-      rowsCollected: sum((r) => r.rowsCollected),
-      rowsWritten: sum((r) => r.rowsWritten),
+      failed: results.length - succeeded.length,
+      rowsCollected: succeeded.reduce((n, r) => n + r.rowsCollected, 0),
+      rowsWritten: succeeded.reduce((n, r) => n + r.rowsWritten, 0),
     });
-    return failed.length ? 1 : 0;
+    return succeeded.length === results.length ? 0 : 1;
   } catch (error) {
     if (isExpectedError(error)) logger.error(`Run aborted: ${error.message}`);
     else logger.error("Run aborted", errorContext(error));

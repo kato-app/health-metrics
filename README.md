@@ -96,7 +96,9 @@ One row per production deployment, where a deployment is a **published GitHub re
 
 **Delta collection.** The watermark is the newest `published_at` already in the tab. On an empty tab, the metric backfills from `startDate`. Otherwise it pages GitHub only as far back as the watermark **minus a 30-day grace window** (never earlier than `startDate`), and stops at the first release created before that point. New rows are sorted oldest first by `published_at`, then `id`, before being appended.
 
-Why the grace window: GitHub orders the listing by `created_at`, which is the date of the release's commit, but we watermark on `published_at`. A draft created before the watermark and published after it would sit below a strict cutoff and be missed. Paging 30 days past the watermark, with ids de-duplicated against the sheet, catches any such release published within that window at the cost of one extra API page at most.
+Why the grace window: GitHub orders the listing by `created_at`, which is the date of the release's commit, but we watermark on `published_at`. A draft created before the watermark and published after it would sit below a strict cutoff and be missed. Paging 30 days past the watermark, with ids de-duplicated against the sheet, catches any such release published within that window at the cost of re-reading a month of releases (usually well within one 100-item page).
+
+If the tab has rows but none carries a readable `published_at`, a warning is logged and the metric backfills from `startDate`; id de-duplication still prevents duplicate rows.
 
 **Failure behaviour.** If any configured repository cannot be read (404, 403, network), the whole metric run fails and nothing is written for it. Other metrics in a `--all` run are unaffected.
 

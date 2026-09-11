@@ -19,11 +19,20 @@ export function createOctokitSource(options: OctokitSourceOptions): GitHubSource
         repo: repo.name,
         per_page: 100,
       });
+      const fullName = repoFullName(repo);
       let page = 0;
       for await (const response of pages) {
         page += 1;
-        logger.debug("Fetched releases page", { repo: repoFullName(repo), page, count: response.data.length });
-        for (const raw of response.data) yield releaseSchema.parse(raw);
+        logger.debug("Fetched releases page", { repo: fullName, page, count: response.data.length });
+        for (const raw of response.data) {
+          const parsed = releaseSchema.safeParse(raw);
+          if (!parsed.success) {
+            throw new Error(`Unexpected release payload from ${fullName} (id ${raw.id}): ${parsed.error.message}`, {
+              cause: parsed.error,
+            });
+          }
+          yield parsed.data;
+        }
       }
     },
   };
