@@ -18,7 +18,7 @@ describe("runMetric", () => {
 
     const result = await runMetric(metric, { sink, logger: noopLogger, dryRun: false });
 
-    assert.deepEqual(result, { metric: "m", status: "ok", rowsWritten: 1 });
+    assert.deepEqual(result, { metric: "m", status: "ok", rowsCollected: 1, rowsWritten: 1 });
     assert.equal(seen.length, 1);
     assert.equal(sink.tabs.get("m")?.length, 2);
   });
@@ -29,7 +29,7 @@ describe("runMetric", () => {
 
     const result = await runMetric(metric, { sink, logger: noopLogger, dryRun: true });
 
-    assert.deepEqual(result, { metric: "m", status: "ok", rowsWritten: 0 });
+    assert.deepEqual(result, { metric: "m", status: "ok", rowsCollected: 1, rowsWritten: 0 });
     assert.equal(sink.appendCalls.length, 0);
   });
 

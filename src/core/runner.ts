@@ -10,7 +10,14 @@ export interface RunOptions {
 }
 
 export type MetricRunResult =
-  | { readonly metric: string; readonly status: "ok"; readonly rowsWritten: number }
+  | {
+      readonly metric: string;
+      readonly status: "ok";
+      /** New rows the metric produced. */
+      readonly rowsCollected: number;
+      /** Rows actually appended to the sink; zero in a dry run. */
+      readonly rowsWritten: number;
+    }
   | { readonly metric: string; readonly status: "failed"; readonly error: unknown };
 
 /**
@@ -29,20 +36,27 @@ export async function runMetric(metric: Metric, options: RunOptions): Promise<Me
     const rows = await metric.collect({ existingRows, logger });
     for (const row of rows) assertRowShape(metric, row);
 
+    const ok = (rowsWritten: number): MetricRunResult => ({
+      metric: metric.name,
+      status: "ok",
+      rowsCollected: rows.length,
+      rowsWritten,
+    });
+
     if (rows.length === 0) {
       logger.info("No new rows");
-      return { metric: metric.name, status: "ok", rowsWritten: 0 };
+      return ok(0);
     }
 
     if (options.dryRun) {
       for (const row of rows) logger.info("Would write row", { row });
       logger.info("Dry run complete; nothing written", { rows: rows.length });
-      return { metric: metric.name, status: "ok", rowsWritten: 0 };
+      return ok(0);
     }
 
     await options.sink.appendRows(metric, rows);
     logger.info("Wrote rows", { rows: rows.length });
-    return { metric: metric.name, status: "ok", rowsWritten: rows.length };
+    return ok(rows.length);
   } catch (error) {
     logger.error("Metric run failed", errorContext(error));
     return { metric: metric.name, status: "failed", error };

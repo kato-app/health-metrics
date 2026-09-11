@@ -1,10 +1,11 @@
 import type { Metric, MetricDependencies, MetricFactory } from "../core/metric.js";
+import { deploymentFrequency } from "./deployment-frequency/index.js";
 
 /**
  * Every metric the CLI knows about. Register new metrics here; the CLI's
  * `list` and `run` commands are driven entirely from this array.
  */
-const factories: readonly MetricFactory[] = [];
+const factories: readonly MetricFactory[] = [deploymentFrequency];
 
 export function createMetrics(deps: MetricDependencies): Metric[] {
   const metrics = factories.map((factory) => factory(deps));

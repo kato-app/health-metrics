@@ -1,5 +1,6 @@
 import type { Config } from "../config/schema.js";
 import type { Logger } from "../logging/logger.js";
+import type { GitHubSource } from "../sources/github/source.js";
 
 /** A value that can be written to a single spreadsheet cell. */
 export type CellValue = string | number | boolean | null;
@@ -37,6 +38,7 @@ export interface Metric {
 export interface MetricDependencies {
   readonly config: Config;
   readonly logger: Logger;
+  readonly github: GitHubSource;
 }
 
 export type MetricFactory = (deps: MetricDependencies) => Metric;

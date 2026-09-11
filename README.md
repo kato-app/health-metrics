@@ -68,7 +68,37 @@ Console output is human-readable at `info` level (`debug` with `--verbose`). Eve
 
 Each metric owns one tab in the spreadsheet, named exactly after the metric. Dates are written as `YYYY-MM-DD HH:MM:SS` in UTC so Google Sheets parses them as native date-times.
 
-_No metrics registered yet. Deployment frequency arrives in the next increment._
+### deployment-frequency
+
+One row per production deployment, where a deployment is a **published GitHub release** in any of the configured repositories.
+
+**Source.** `GET /repos/{owner}/{repo}/releases` via Octokit, 100 per page, for each repository in `config.github.repos`. GitHub returns releases newest-created first.
+
+**Columns**, in order:
+
+| Column | From |
+| --- | --- |
+| `published_at` | `published_at`, formatted `YYYY-MM-DD HH:MM:SS` UTC |
+| `repo` | `owner/name`, e.g. `kato-app/kato` |
+| `id` | release `id` (unique per release; used for de-duplication) |
+| `author_login` | `author.login`, blank if GitHub reports no author |
+| `tag_name` | `tag_name` |
+| `name` | release `name` |
+| `target_commitish` | branch or commit the release was cut from |
+| `html_url` | link to the release page |
+
+**Exclusion rules.**
+
+- Drafts are excluded. They have no `published_at` and will be picked up once published.
+- Prereleases are excluded. A prerelease later promoted to a full release is picked up at that point.
+- Releases published before `config.startDate` are excluded.
+- Releases whose `id` is already in the sheet are excluded, so a re-run or a run that failed part-way never produces duplicates.
+
+**Delta collection.** The watermark is the newest `published_at` already in the tab. On an empty tab, the metric backfills from `startDate`. Otherwise it pages GitHub only as far back as the watermark **minus a 30-day grace window** (never earlier than `startDate`), and stops at the first release created before that point. New rows are sorted oldest first by `published_at`, then `id`, before being appended.
+
+Why the grace window: GitHub orders the listing by `created_at`, which is the date of the release's commit, but we watermark on `published_at`. A draft created before the watermark and published after it would sit below a strict cutoff and be missed. Paging 30 days past the watermark, with ids de-duplicated against the sheet, catches any such release published within that window at the cost of one extra API page at most.
+
+**Failure behaviour.** If any configured repository cannot be read (404, 403, network), the whole metric run fails and nothing is written for it. Other metrics in a `--all` run are unaffected.
 
 ## Adding a metric
 

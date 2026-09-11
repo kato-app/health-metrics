@@ -6,6 +6,15 @@ import type { MetricSink } from "./core/sink.js";
 import { createLogger } from "./logging/create-logger.js";
 import { errorContext, type Logger } from "./logging/logger.js";
 import { createMetrics } from "./metrics/index.js";
+import { createOctokitSource } from "./sources/github/octokit-source.js";
+import type { GitHubSource } from "./sources/github/source.js";
+
+/** For commands that only describe metrics and must never reach the network. */
+const offlineGitHub: GitHubSource = {
+  listReleases() {
+    throw new Error("GitHub is not available in this command");
+  },
+};
 
 interface RunCommandOptions {
   all?: boolean;
@@ -48,16 +57,20 @@ async function runCommand(name: string | undefined, opts: RunCommandOptions): Pr
   });
 
   try {
-    loadEnv();
-    const metrics = selectMetrics(createMetrics({ config, logger }), name, opts.all);
+    const env = loadEnv();
+    const github = createOctokitSource({ token: env.GITHUB_TOKEN, logger });
+    const metrics = selectMetrics(createMetrics({ config, logger, github }), name, opts.all);
     const sink = await createSink(logger);
     const results = await runMetrics(metrics, { sink, logger, dryRun: opts.dryRun ?? false });
 
     const failed = results.filter((r) => r.status === "failed");
+    const sum = (pick: (r: Extract<(typeof results)[number], { status: "ok" }>) => number) =>
+      results.reduce((n, r) => n + (r.status === "ok" ? pick(r) : 0), 0);
     logger.info("Run complete", {
       metrics: results.length,
       failed: failed.length,
-      rowsWritten: results.reduce((n, r) => n + (r.status === "ok" ? r.rowsWritten : 0), 0),
+      rowsCollected: sum((r) => r.rowsCollected),
+      rowsWritten: sum((r) => r.rowsWritten),
     });
     return failed.length ? 1 : 0;
   } catch (error) {
@@ -69,7 +82,7 @@ async function runCommand(name: string | undefined, opts: RunCommandOptions): Pr
 
 function listCommand(): void {
   const config = loadConfig();
-  const metrics = createMetrics({ config, logger: createLogger({ consoleLevel: "warn" }) });
+  const metrics = createMetrics({ config, logger: createLogger({ consoleLevel: "warn" }), github: offlineGitHub });
   if (metrics.length === 0) {
     console.log("No metrics registered.");
     return;
