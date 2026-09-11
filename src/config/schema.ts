@@ -1,14 +1,9 @@
 import { z } from "zod";
 
-const isoDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "expected YYYY-MM-DD")
-  .refine((s) => !Number.isNaN(Date.parse(`${s}T00:00:00Z`)), "not a valid date");
-
 export const configSchema = z.object({
   spreadsheetId: z.string().min(1),
-  /** Earliest date (inclusive, UTC) from which metrics are backfilled. */
-  startDate: isoDate,
+  /** Earliest date (inclusive, UTC) from which metrics are backfilled, as YYYY-MM-DD. */
+  startDate: z.iso.date(),
   github: z.object({
     owner: z.string().min(1),
     repos: z.array(z.string().min(1)).min(1),

@@ -43,10 +43,9 @@ export type MetricFactory = (deps: MetricDependencies) => Metric;
 
 /** Asserts that a row carries exactly the metric's columns and nothing else. */
 export function assertRowShape(metric: Metric, row: MetricRow): void {
-  const expected = new Set(metric.columns);
-  const actual = Object.keys(row);
-  const missing = metric.columns.filter((c) => !(c in row));
-  const extra = actual.filter((c) => !expected.has(c));
+  const actual = new Set(Object.keys(row));
+  const missing = metric.columns.filter((c) => !actual.has(c));
+  const extra = [...actual].filter((c) => !metric.columns.includes(c));
   if (missing.length || extra.length) {
     throw new Error(
       `Metric "${metric.name}" produced a row with the wrong shape` +

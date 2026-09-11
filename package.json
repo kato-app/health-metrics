@@ -2,7 +2,6 @@
   "name": "health-metrics",
   "version": "0.1.0",
   "description": "Collects Technology health metrics from source systems and writes them to Google Sheets",
-  "main": "index.js",
   "scripts": {
     "test": "node --import tsx --test 'tests/**/*.test.ts'",
     "metrics": "tsx src/cli.ts",
@@ -14,7 +13,7 @@
   "author": "",
   "license": "UNLICENSED",
   "type": "module",
-  "private": "true",
+  "private": true,
   "dependencies": {
     "@googleapis/sheets": "17.0.0",
     "commander": "15.0.0",

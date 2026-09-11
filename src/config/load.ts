@@ -4,8 +4,20 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { configSchema, envSchema, type Config, type Env } from "./schema.js";
 
+/**
+ * Nearest ancestor directory of this module that holds a package.json. Walking
+ * up (rather than a fixed number of levels) keeps the answer correct whether
+ * this file runs from `src/` via tsx or from `dist/src/` after `npm run build`.
+ */
+function findProjectRoot(from: string): string {
+  for (let dir = from; ; dir = path.dirname(dir)) {
+    if (existsSync(path.join(dir, "package.json"))) return dir;
+    if (path.dirname(dir) === dir) throw new Error(`No package.json found above ${from}`);
+  }
+}
+
 /** Absolute path of the project root, independent of the current working directory. */
-export const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+export const projectRoot = findProjectRoot(path.dirname(fileURLToPath(import.meta.url)));
 
 /** Resolve a project-relative path to an absolute one. */
 export function fromProjectRoot(...segments: string[]): string {
@@ -34,17 +46,11 @@ export function parseEnv(raw: NodeJS.ProcessEnv): Env {
 }
 
 export function loadConfig(file = fromProjectRoot("config.json")): Config {
-  let text: string;
-  try {
-    text = readFileSync(file, "utf8");
-  } catch (err) {
-    throw new ConfigError(`Cannot read ${file}: ${(err as Error).message}`);
-  }
   let json: unknown;
   try {
-    json = JSON.parse(text);
+    json = JSON.parse(readFileSync(file, "utf8"));
   } catch (err) {
-    throw new ConfigError(`${file} is not valid JSON: ${(err as Error).message}`);
+    throw new ConfigError(`Cannot load ${file}: ${err instanceof Error ? err.message : String(err)}`);
   }
   return parseConfig(json);
 }

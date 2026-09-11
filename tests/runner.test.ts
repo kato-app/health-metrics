@@ -48,8 +48,9 @@ describe("runMetric", () => {
 
     const result = await runMetric(metric, { sink, logger: noopLogger, dryRun: false });
 
-    assert.equal(result.status, "failed");
-    assert.match(String((result as { error: Error }).error.message), /missing: id.*unexpected: wrong/);
+    assert(result.status === "failed");
+    assert(result.error instanceof Error);
+    assert.match(result.error.message, /missing: id.*unexpected: wrong/);
     assert.equal(sink.appendCalls.length, 0);
   });
 

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, it } from "node:test";
-import { ConfigError, parseConfig, parseEnv } from "../src/config/load.js";
+import { ConfigError, loadConfig, parseConfig, parseEnv } from "../src/config/load.js";
 
 const valid = {
   spreadsheetId: "sheet",
@@ -21,9 +24,34 @@ describe("parseConfig", () => {
     );
   });
 
-  it("rejects a malformed start date", () => {
-    assert.throws(() => parseConfig({ ...valid, startDate: "01/01/2026" }), ConfigError);
-    assert.throws(() => parseConfig({ ...valid, startDate: "2026-13-45" }), ConfigError);
+  it("rejects a malformed or impossible start date", () => {
+    for (const startDate of ["01/01/2026", "2026-13-45", "2026-02-30", "2026-1-1"]) {
+      assert.throws(() => parseConfig({ ...valid, startDate }), ConfigError, startDate);
+    }
+  });
+});
+
+describe("loadConfig", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "health-metrics-"));
+
+  it("reports a missing file as a ConfigError", () => {
+    const file = path.join(dir, "missing.json");
+    assert.throws(
+      () => loadConfig(file),
+      (err: unknown) => err instanceof ConfigError && err.message.includes(file),
+    );
+  });
+
+  it("reports malformed JSON as a ConfigError", () => {
+    const file = path.join(dir, "broken.json");
+    writeFileSync(file, "{ not json");
+    assert.throws(() => loadConfig(file), ConfigError);
+  });
+
+  it("reads and validates a file", () => {
+    const file = path.join(dir, "config.json");
+    writeFileSync(file, JSON.stringify(valid));
+    assert.deepEqual(loadConfig(file), valid);
   });
 });
 

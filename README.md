@@ -46,6 +46,7 @@ Other scripts:
 npm test          # unit tests (Node test runner)
 npm run typecheck # tsc --noEmit
 npm run build     # compile to dist/
+npm start -- list # run the compiled CLI (same commands as above)
 ```
 
 ## Logging

@@ -1,5 +1,4 @@
-import type { Logger } from "../logging/logger.js";
-import { errorContext } from "../logging/logger.js";
+import { errorContext, type Logger } from "../logging/logger.js";
 import { assertRowShape, type Metric } from "./metric.js";
 import type { MetricSink } from "./sink.js";
 
