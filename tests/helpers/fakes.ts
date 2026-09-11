@@ -27,8 +27,17 @@ export function release(overrides: Partial<GitHubRelease> & { id: number }): Git
  */
 export class FakeGitHubSource implements GitHubSource {
   readonly yielded = new Map<string, number>();
+  discoveryCalls = 0;
 
   constructor(private readonly releasesByRepo: Record<string, GitHubRelease[]>) {}
+
+  /** Every configured repo with at least one release, mirroring the GraphQL discovery. */
+  async listReposWithReleases(_org: string): Promise<string[]> {
+    this.discoveryCalls += 1;
+    return Object.entries(this.releasesByRepo)
+      .filter(([, releases]) => releases.length > 0)
+      .map(([name]) => name);
+  }
 
   async *listReleases(repo: RepoRef): AsyncIterable<GitHubRelease> {
     const releases = this.releasesByRepo[repo.name];

@@ -1,5 +1,6 @@
 import { Octokit } from "octokit";
 import type { Logger } from "../../logging/logger.js";
+import { discoverReposWithReleases } from "./discover-repos.js";
 import { releaseSchema, repoFullName, type GitHubRelease, type GitHubSource, type RepoRef } from "./source.js";
 
 export interface OctokitSourceOptions {
@@ -34,6 +35,11 @@ export function createOctokitSource(options: OctokitSourceOptions): GitHubSource
           yield parsed.data;
         }
       }
+    },
+
+    listReposWithReleases(org: string): Promise<string[]> {
+      // octokit.graphql posts to https://api.github.com/graphql with the same token.
+      return discoverReposWithReleases((query, variables) => octokit.graphql(query, variables), org, logger);
     },
   };
 }

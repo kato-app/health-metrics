@@ -17,6 +17,9 @@ const offlineGitHub: GitHubSource = {
   listReleases() {
     throw new Error("GitHub is not available in this command");
   },
+  listReposWithReleases() {
+    throw new Error("GitHub is not available in this command");
+  },
 };
 
 interface RunCommandOptions {

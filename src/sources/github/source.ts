@@ -38,4 +38,6 @@ export function repoFullName(repo: RepoRef): string {
 export interface GitHubSource {
   /** Releases for a repository in the order GitHub returns them: newest `created_at` first. */
   listReleases(repo: RepoRef): AsyncIterable<GitHubRelease>;
+  /** Names of every repository in the organisation that has at least one release of any kind. */
+  listReposWithReleases(org: string): Promise<string[]>;
 }
