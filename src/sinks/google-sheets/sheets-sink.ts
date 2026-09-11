@@ -84,11 +84,11 @@ export function createSheetsSink(client: SpreadsheetClient, logger: Logger): Met
     async appendRows(metric, rows) {
       if (rows.length === 0) return;
       const sheetId = await ensureTabWithHeader(metric);
-      const range = columnsRange(metric.columns.length);
-      await client.appendValues(metric.name, range, rows.map((row) => encodeRow(metric, row)));
+      await client.appendValues(metric.name, columnsRange(metric.columns.length), rows.map((row) => encodeRow(metric, row)));
 
-      // Rows inserted by append do not inherit column formatting, so re-apply it
-      // to the whole column after every write. Idempotent and one API call.
+      // Rows added at the end of the sheet by an append do not inherit column
+      // formatting, so re-apply it to the whole column after every write.
+      // Idempotent and one API call.
       const dateColumns = metric.columns.flatMap((c, i) => (rows.some((row) => parseSheetDate(row[c])) ? [i] : []));
       await client.formatDateTimeColumns(sheetId, dateColumns, SHEET_DATE_PATTERN);
     },

@@ -30,8 +30,9 @@ function parseRange(range: string | undefined): { columns: number; rowsFrom: num
  * In-memory spreadsheet. Stores cells as written and renders them the way the
  * real API does with FORMATTED_VALUE: everything becomes text, serials in a
  * date-formatted column render with the sheet-date pattern, and trailing empty
- * cells and rows within the requested range are omitted. Appends land below the
- * last row that has data within the requested columns, as the real API does.
+ * cells and rows within the requested range are omitted. Appends fill the blank
+ * rows below the last row that has data within the requested columns, leaving
+ * cells outside those columns where they are, as the real API does with OVERWRITE.
  */
 class InMemorySpreadsheet implements SpreadsheetClient {
   readonly tabs = new Map<string, { sheetId: number; rows: Cell[][]; dateColumns: Set<number> }>();
@@ -211,13 +212,13 @@ describe("SheetsSink.appendRows", () => {
     ]);
   });
 
-  it("appends directly under the last data row even when a helper column runs further down", async () => {
+  it("fills the rows under the last data row without moving a helper column that runs further down", async () => {
     const sheet = new InMemorySpreadsheet({
       deploys: [
         [...HEADER, "Week Start Helper"],
-        ["2026-03-01 10:00:00", "kato-app/kato", "100", "v1", "#REF!"],
-        ["", "", "", "", "#REF!"],
-        ["", "", "", "", "#REF!"],
+        ["2026-03-01 10:00:00", "kato-app/kato", "100", "v1", "=A2"],
+        ["", "", "", "", "=A3"],
+        ["", "", "", "", "=A4"],
       ],
     });
     const sink = createSheetsSink(sheet, noopLogger);
@@ -225,8 +226,8 @@ describe("SheetsSink.appendRows", () => {
     await sink.appendRows(metric, [row2]);
 
     const tab = sheet.tabs.get("deploys")!;
-    assert.deepEqual(tab.rows[2]?.slice(0, 4), [toSheetSerial(new Date("2026-03-02T10:00:00Z")), "kato-app/kato", 200, ""]);
-    assert.equal(tab.rows[2]?.[4], "#REF!", "helper column left alone");
+    assert.deepEqual(tab.rows[2], [toSheetSerial(new Date("2026-03-02T10:00:00Z")), "kato-app/kato", 200, "", "=A3"]);
+    assert.deepEqual(tab.rows.map((r) => r[4]), ["Week Start Helper", "=A2", "=A3", "=A4"], "helper column not shifted");
     assert.ok(sheet.calls.includes(`appendValues:deploys:${RANGE}:1`));
   });
 

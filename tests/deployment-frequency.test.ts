@@ -4,6 +4,7 @@ import type { MetricRow } from "../src/core/metric.js";
 import { formatSheetDate, parseSheetDate } from "../src/core/sheet-date.js";
 import { noopLogger } from "../src/logging/logger.js";
 import { collectDeploymentFrequency, findWatermark } from "../src/metrics/deployment-frequency/collect.js";
+import { deploymentFrequency } from "../src/metrics/deployment-frequency/index.js";
 import { COLUMNS, toRow } from "../src/metrics/deployment-frequency/transform.js";
 import { releaseSchema } from "../src/sources/github/source.js";
 import { FakeGitHubSource, release } from "./helpers/fakes.js";
@@ -195,5 +196,26 @@ describe("collectDeploymentFrequency", () => {
     const github = new FakeGitHubSource({ kato: [] }); // kato-settings missing => 404
 
     await assert.rejects(collectDeploymentFrequency(github, options, ctx()), /Not Found/);
+  });
+});
+
+describe("deploymentFrequency factory", () => {
+  it("asks the registry for repositories when collecting, not when constructed, so `list` stays offline", async () => {
+    const config = { spreadsheetId: "sheet", startDate: "2026-01-01", github: { owner: "kato-app", excludeRepos: [] }, logging: { file: "logs/app.log" } };
+    let asked = 0;
+    const repos = {
+      list: async () => {
+        asked += 1;
+        return [kato];
+      },
+    };
+    const github = new FakeGitHubSource({ kato: [release({ id: 1 })], "kato-settings": [release({ id: 2 })] });
+
+    const metric = deploymentFrequency({ config, logger: noopLogger, github, repos });
+    assert.equal(asked, 0);
+
+    const rows = await metric.collect(ctx());
+    assert.equal(asked, 1);
+    assert.deepEqual(rows.map((r) => r.repo), ["kato-app/kato"], "only the registry's repos are collected");
   });
 });

@@ -17,7 +17,8 @@ export interface SpreadsheetClient {
   /**
    * Appends rows below the last row that has data within `range`, starting at
    * the range's first column. Data outside the range (a user's helper columns)
-   * does not affect where the rows land.
+   * does not affect where the rows land and is not moved: rows are written into
+   * the blank cells below the block, growing the sheet only when it runs out.
    */
   appendValues(tab: string, range: string, values: readonly (readonly Cell[])[]): Promise<void>;
   /** Creates an empty tab and returns its sheet id. */

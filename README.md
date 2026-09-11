@@ -15,7 +15,7 @@ cp .env.example .env   # then fill in the values
 
 | Variable | Purpose |
 | --- | --- |
-| `GITHUB_TOKEN` | Personal access token with read access to the configured repositories. |
+| `GITHUB_TOKEN` | Personal access token with read access to the organisation in `github.owner` and its repositories. |
 | `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` | Path to a Google service account key JSON. Share the spreadsheet with the service account's email as an Editor. |
 
 `config.json` holds non-secret settings and is committed:
@@ -58,9 +58,9 @@ npm start -- list # run the compiled CLI (same commands as above)
 3. Share the target spreadsheet with the service account's email address as an **Editor**.
 4. Point `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in `.env` at the key file (relative paths resolve from the project root). The run aborts before contacting anything if the file does not exist.
 
-**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row starting at column A. The tab and header are created on the first write; an existing tab's first cells must match the metric's columns exactly (a blank first row above data counts as a mismatch), otherwise the run fails before writing anything. The metric only ever reads and writes its own block of columns, so you can add helper columns and formulas to the right of the data: they are ignored by the header check, and new rows are appended directly under the last row that has data in the metric's columns even if a helper formula runs further down. Rows left blank across all metric columns (for example data cleared by hand) are ignored when reading. The tab list is fetched once per run and a header verified while reading is not re-read before appending.
+**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row starting at column A. The tab and header are created on the first write; an existing tab's first cells must match the metric's columns exactly (a blank first row above data counts as a mismatch), otherwise the run fails before writing anything. The metric only ever reads and writes its own block of columns, so you can add helper columns and formulas to the right of the data: they are ignored by the header check, and new rows are written directly under the last row that has data in the metric's columns even if a helper formula runs further down. Those rows are filled in place rather than inserted, so formulas filled down beside the data stay on the rows they refer to; the sheet only grows when the block reaches its last row. Rows left blank across all metric columns (for example data cleared by hand) are ignored when reading. The tab list is fetched once per run and a header verified while reading is not re-read before appending.
 
-**Encoding.** Rows are written with the `RAW` input option, so Sheets never reinterprets text: a release named `6.5` stays text and a value beginning with `=` is never treated as a formula. Date-time cells are the one exception. They are written as native Sheets serial numbers, and any column that holds one in the rows being written is given the number format `yyyy-mm-dd hh:mm:ss` after every write (rows inserted by an append do not inherit column formatting), so they sort, filter and chart as dates and read back as exactly the text the metric wrote. Blank cells read back as `null`; every other value reads back as text, which is why metrics compare ids as strings.
+**Encoding.** Rows are written with the `RAW` input option, so Sheets never reinterprets text: a release named `6.5` stays text and a value beginning with `=` is never treated as a formula. Date-time cells are the one exception. They are written as native Sheets serial numbers, and any column that holds one in the rows being written is given the number format `yyyy-mm-dd hh:mm:ss` after every write (rows added at the end of the sheet by an append do not inherit column formatting), so they sort, filter and chart as dates and read back as exactly the text the metric wrote. Blank cells read back as `null`; every other value reads back as text, which is why metrics compare ids as strings.
 
 If someone changes the date column's display format in the sheet, the watermark becomes unreadable: the metric logs a warning and re-pages from `startDate`, and id de-duplication keeps the tab free of duplicates.
 
@@ -99,7 +99,7 @@ Each metric owns one tab in the spreadsheet, named exactly after the metric. Met
 
 ### deployment-frequency
 
-One row per production deployment, where a deployment is a **published GitHub release** in any of the configured repositories.
+One row per production deployment, where a deployment is a **published GitHub release** in any of the discovered repositories.
 
 **Source.** `GET /repos/{owner}/{repo}/releases` via Octokit, 100 per page, for each repository returned by [Repository discovery](#repository-discovery). GitHub returns releases newest-created first.
 
@@ -129,11 +129,11 @@ Why the grace window: GitHub orders the listing by `created_at`, which is the da
 
 If the tab has rows but none carries a readable `published_at`, a warning is logged and the metric backfills from `startDate`; id de-duplication still prevents duplicate rows.
 
-**Failure behaviour.** If any configured repository cannot be read (404, 403, network), the whole metric run fails and nothing is written for it. Other metrics in a `--all` run are unaffected.
+**Failure behaviour.** If repository discovery fails or any discovered repository cannot be read (404, 403, network), the whole metric run fails and nothing is written for it. Other metrics in a `--all` run are unaffected.
 
 ## Adding a metric
 
-1. Create `src/metrics/<name>/` with a factory that returns a `Metric` (see `src/core/metric.ts`): a name, description, ordered `columns`, and a `collect` function that receives the existing rows and returns only new ones, oldest first.
+1. Create `src/metrics/<name>/` with a factory that returns a `Metric` (see `src/core/metric.ts`): a name, description, ordered `columns`, and a `collect` function that receives the existing rows and returns only new ones, oldest first. A metric that reads GitHub repositories gets them from `repos.list()` inside `collect`, never at construction time, so `metrics list` stays offline and discovery runs once per run.
 2. Register the factory in `src/metrics/index.ts`.
 3. Add unit tests for the transform and the delta logic against fakes of the source.
 4. Document the metric's source, columns, and exclusion rules in this README.

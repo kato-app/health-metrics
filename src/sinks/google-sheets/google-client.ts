@@ -8,7 +8,7 @@ export interface GoogleClientOptions {
   readonly keyFile: string;
 }
 
-/** Quotes a tab title for use in an A1 range, e.g. `'deployment-frequency'!1:1`. */
+/** Quotes a tab title for use in an A1 range, e.g. `'deployment-frequency'!A:H`. */
 function tabRange(tab: string, range?: string): string {
   const quoted = `'${tab.replace(/'/g, "''")}'`;
   return range ? `${quoted}!${range}` : quoted;
@@ -79,12 +79,17 @@ export function createGoogleSheetsClient(options: GoogleClientOptions): Spreadsh
     },
 
     async appendValues(tab, range, values) {
+      // OVERWRITE fills the blank rows under the block's last data row (still
+      // adding rows at the end of the sheet when needed) instead of inserting
+      // new ones, so a helper column filled down beside the data is not pushed
+      // out of line with the rows it refers to. The cells written are blank by
+      // construction: the API finds the table within `range` and starts below it.
       await call(() =>
         api.spreadsheets.values.append({
           spreadsheetId,
           range: tabRange(tab, range),
           valueInputOption: "RAW",
-          insertDataOption: "INSERT_ROWS",
+          insertDataOption: "OVERWRITE",
           requestBody: { values: values.map((row) => [...row] as Cell[]) },
         }),
       );
