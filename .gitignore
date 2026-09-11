@@ -1,0 +1,7 @@
+node_modules/
+dist/
+logs/
+.env
+.claude/settings.local.json
+google-service-account*.json
+.DS_Store

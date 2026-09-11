@@ -1,0 +1,11 @@
+{
+  "spreadsheetId": "1Y9qE_qEj1mRQYB047Yhd1w6tUs4Cx_oFkVULnQHY4gY",
+  "startDate": "2026-01-01",
+  "github": {
+    "owner": "kato-app",
+    "repos": ["kato", "kato-settings"]
+  },
+  "logging": {
+    "file": "logs/app.log"
+  }
+}
