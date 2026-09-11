@@ -201,7 +201,13 @@ describe("collectDeploymentFrequency", () => {
 
 describe("deploymentFrequency factory", () => {
   it("asks the registry for repositories when collecting, not when constructed, so `list` stays offline", async () => {
-    const config = { spreadsheetId: "sheet", startDate: "2026-01-01", github: { owner: "kato-app", excludeRepos: [] }, logging: { file: "logs/app.log" } };
+    const config = {
+      spreadsheetId: "sheet",
+      startDate: "2026-01-01",
+      github: { owner: "kato-app", excludeRepos: [] },
+      jira: { projects: [{ key: "GR", team: "Kato Growth" }] },
+      logging: { file: "logs/app.log" },
+    };
     let asked = 0;
     const repos = {
       list: async () => {

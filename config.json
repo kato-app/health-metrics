@@ -5,6 +5,13 @@
     "owner": "kato-app",
     "excludeRepos": []
   },
+  "jira": {
+    "projects": [
+      { "key": "AT", "team": "Atlas" },
+      { "key": "CW", "team": "Kato Core" },
+      { "key": "GR", "team": "Kato Growth" }
+    ]
+  },
   "logging": {
     "file": "logs/app.log"
   }

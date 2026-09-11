@@ -17,6 +17,9 @@ cp .env.example .env   # then fill in the values
 | --- | --- |
 | `GITHUB_TOKEN` | Personal access token with read access to the organisation in `github.owner` and its repositories. |
 | `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` | Path to a Google service account key JSON. Share the spreadsheet with the service account's email as an Editor. |
+| `ATLASSIAN_BASE_URL` | Jira Cloud site, e.g. `https://your-site.atlassian.net`. |
+| `ATLASSIAN_EMAIL` | Email of the Atlassian user the API token belongs to. |
+| `ATLASSIAN_TOKEN` | Atlassian API token created at https://id.atlassian.com/manage-profile/security/api-tokens. It inherits that user's permissions and expires after at most a year. |
 
 `config.json` holds non-secret settings and is committed:
 
@@ -26,6 +29,7 @@ cp .env.example .env   # then fill in the values
 | `startDate` | Earliest date (UTC, inclusive) backfilled when a metric's tab is empty. |
 | `github.owner` | GitHub **organisation** whose repositories are discovered (see [Repository discovery](#repository-discovery)). A user account will not work. |
 | `github.excludeRepos` | Repository names (without the owner) to leave out of every metric even though they have releases. Optional; defaults to `[]`. |
+| `jira.projects` | Jira projects to collect issues from, each as `{ "key": "GR", "team": "Kato Growth" }`. Only these projects are queried; the team name is written to the sheet alongside the project key. |
 | `logging.file` | Project-relative path of the JSON log file, appended to on every run. |
 
 ## CLI

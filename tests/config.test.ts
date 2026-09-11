@@ -9,6 +9,7 @@ const valid = {
   spreadsheetId: "sheet",
   startDate: "2026-01-01",
   github: { owner: "kato-app", excludeRepos: [] },
+  jira: { projects: [{ key: "GR", team: "Kato Growth" }] },
   logging: { file: "logs/app.log" },
 };
 
@@ -71,9 +72,21 @@ describe("parseEnv", () => {
     );
   });
 
+  const complete = {
+    GITHUB_TOKEN: "t",
+    GOOGLE_SERVICE_ACCOUNT_KEY_FILE: "k",
+    ATLASSIAN_BASE_URL: "https://example.atlassian.net",
+    ATLASSIAN_EMAIL: "me@example.com",
+    ATLASSIAN_TOKEN: "j",
+  };
+
   it("ignores unrelated variables", () => {
-    const env = parseEnv({ GITHUB_TOKEN: "t", GOOGLE_SERVICE_ACCOUNT_KEY_FILE: "k", PATH: "/bin" });
-    assert.deepEqual(env, { GITHUB_TOKEN: "t", GOOGLE_SERVICE_ACCOUNT_KEY_FILE: "k" });
+    assert.deepEqual(parseEnv({ ...complete, PATH: "/bin" }), complete);
+  });
+
+  it("rejects a malformed Jira site URL or email", () => {
+    assert.throws(() => parseEnv({ ...complete, ATLASSIAN_BASE_URL: "example.atlassian.net" }), ConfigError);
+    assert.throws(() => parseEnv({ ...complete, ATLASSIAN_EMAIL: "not-an-email" }), ConfigError);
   });
 });
 
@@ -83,17 +96,17 @@ describe("resolveKeyFile", () => {
   it("returns an absolute path unchanged when the file exists", () => {
     const file = path.join(dir, "key.json");
     writeFileSync(file, "{}");
-    assert.equal(resolveKeyFile({ GITHUB_TOKEN: "t", GOOGLE_SERVICE_ACCOUNT_KEY_FILE: file }), file);
+    assert.equal(resolveKeyFile({ GOOGLE_SERVICE_ACCOUNT_KEY_FILE: file }), file);
   });
 
   it("resolves a relative path from the project root", () => {
-    assert.equal(resolveKeyFile({ GITHUB_TOKEN: "t", GOOGLE_SERVICE_ACCOUNT_KEY_FILE: "./package.json" }), fromProjectRoot("package.json"));
+    assert.equal(resolveKeyFile({ GOOGLE_SERVICE_ACCOUNT_KEY_FILE: "./package.json" }), fromProjectRoot("package.json"));
   });
 
   it("names the missing file in a ConfigError", () => {
     const file = path.join(dir, "missing.json");
     assert.throws(
-      () => resolveKeyFile({ GITHUB_TOKEN: "t", GOOGLE_SERVICE_ACCOUNT_KEY_FILE: file }),
+      () => resolveKeyFile({ GOOGLE_SERVICE_ACCOUNT_KEY_FILE: file }),
       (err: unknown) => err instanceof ConfigError && err.message.includes(file),
     );
   });

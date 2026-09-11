@@ -66,7 +66,7 @@ export function loadEnv(file = fromProjectRoot(".env")): Env {
  * `.env` fails with a clear message instead of an auth error on the first
  * Sheets request.
  */
-export function resolveKeyFile(env: Env): string {
+export function resolveKeyFile(env: Pick<Env, "GOOGLE_SERVICE_ACCOUNT_KEY_FILE">): string {
   const file = fromProjectRoot(env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE);
   if (!existsSync(file)) throw new ConfigError(`GOOGLE_SERVICE_ACCOUNT_KEY_FILE points to ${file}, which does not exist`);
   return file;

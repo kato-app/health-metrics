@@ -13,6 +13,19 @@ export const configSchema = z.object({
      */
     excludeRepos: z.array(z.string().min(1)).default([]),
   }),
+  jira: z.object({
+    /** Jira projects to collect issues from, each mapped to the team it belongs to. */
+    projects: z
+      .array(
+        z.object({
+          /** Jira project key, e.g. `GR`. */
+          key: z.string().min(1),
+          /** Human-readable team name written to the sheet, e.g. `Growth`. */
+          team: z.string().min(1),
+        }),
+      )
+      .min(1),
+  }),
   logging: z.object({
     /** Project-relative path of the JSON log file that is appended to on every run. */
     file: z.string().min(1),
@@ -20,10 +33,15 @@ export const configSchema = z.object({
 });
 
 export type Config = z.infer<typeof configSchema>;
+export type JiraProject = Config["jira"]["projects"][number];
 
 export const envSchema = z.object({
   GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required"),
   GOOGLE_SERVICE_ACCOUNT_KEY_FILE: z.string().min(1, "GOOGLE_SERVICE_ACCOUNT_KEY_FILE is required"),
+  /** Jira Cloud site, e.g. https://example.atlassian.net */
+  ATLASSIAN_BASE_URL: z.url({ protocol: /^https?$/ }),
+  ATLASSIAN_EMAIL: z.email(),
+  ATLASSIAN_TOKEN: z.string().min(1, "ATLASSIAN_TOKEN is required"),
 });
 
 export type Env = z.infer<typeof envSchema>;
