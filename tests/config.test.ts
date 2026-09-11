@@ -8,7 +8,7 @@ import { ConfigError, fromProjectRoot, loadConfig, parseConfig, parseEnv, resolv
 const valid = {
   spreadsheetId: "sheet",
   startDate: "2026-01-01",
-  github: { owner: "kato-app", repos: ["kato"] },
+  github: { owner: "kato-app", excludeRepos: [] },
   logging: { file: "logs/app.log" },
 };
 
@@ -17,10 +17,15 @@ describe("parseConfig", () => {
     assert.deepEqual(parseConfig(valid), valid);
   });
 
-  it("rejects an empty repo list with a readable message", () => {
+  it("defaults excludeRepos to no exclusions when omitted", () => {
+    const { excludeRepos: _omitted, ...github } = valid.github;
+    assert.deepEqual(parseConfig({ ...valid, github }).github.excludeRepos, []);
+  });
+
+  it("rejects a blank repo name in excludeRepos with a readable message", () => {
     assert.throws(
-      () => parseConfig({ ...valid, github: { ...valid.github, repos: [] } }),
-      (err: unknown) => err instanceof ConfigError && /github\.repos/.test(err.message),
+      () => parseConfig({ ...valid, github: { ...valid.github, excludeRepos: [""] } }),
+      (err: unknown) => err instanceof ConfigError && /github\.excludeRepos/.test(err.message),
     );
   });
 

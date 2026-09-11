@@ -32,8 +32,9 @@ export function repoFullName(repo: RepoRef): string {
 }
 
 /**
- * Read-only access to GitHub. Implementations page lazily so consumers can
- * stop early once they reach data they already have.
+ * Read-only access to GitHub. Release listing pages lazily so consumers can
+ * stop early once they reach data they already have; repository discovery
+ * scans the whole organisation and returns the complete list.
  */
 export interface GitHubSource {
   /** Releases for a repository in the order GitHub returns them: newest `created_at` first. */

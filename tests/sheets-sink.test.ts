@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import type { Metric } from "../src/core/metric.js";
 import { MS_PER_DAY, SHEET_DATE_PATTERN, formatSheetDate, toSheetSerial } from "../src/core/sheet-date.js";
 import { noopLogger } from "../src/logging/logger.js";
+import { columnLetter, columnsRange, headerRange } from "../src/sinks/google-sheets/a1.js";
 import { createSheetsSink, encodeCell } from "../src/sinks/google-sheets/sheets-sink.js";
 import type { Cell, SpreadsheetClient } from "../src/sinks/google-sheets/spreadsheet-client.js";
 import { fakeMetric } from "./helpers/fakes.js";
@@ -14,11 +15,23 @@ function trimTrailing<T>(items: T[], isEmpty: (item: T) => boolean): T[] {
   return items.slice(0, end);
 }
 
+/** Parses the ranges the sink uses: `A:H` (all rows, columns 0..7) or `A1:H1` (row 1 only). Undefined = whole tab. */
+function parseRange(range: string | undefined): { columns: number; rowsFrom: number; rowsTo: number } {
+  if (range === undefined) return { columns: Infinity, rowsFrom: 0, rowsTo: Infinity };
+  const match = /^A(\d*):([A-Z]+)(\d*)$/.exec(range);
+  assert.ok(match, `unsupported range ${range}`);
+  const columns = [...match[2]!].reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0);
+  const rowsFrom = match[1] ? Number(match[1]) - 1 : 0;
+  const rowsTo = match[3] ? Number(match[3]) : Infinity;
+  return { columns, rowsFrom, rowsTo };
+}
+
 /**
  * In-memory spreadsheet. Stores cells as written and renders them the way the
  * real API does with FORMATTED_VALUE: everything becomes text, serials in a
  * date-formatted column render with the sheet-date pattern, and trailing empty
- * cells and rows are omitted.
+ * cells and rows within the requested range are omitted. Appends land below the
+ * last row that has data within the requested columns, as the real API does.
  */
 class InMemorySpreadsheet implements SpreadsheetClient {
   readonly tabs = new Map<string, { sheetId: number; rows: Cell[][]; dateColumns: Set<number> }>();
@@ -40,10 +53,11 @@ class InMemorySpreadsheet implements SpreadsheetClient {
     this.calls.push(`getValues:${tab}:${range ?? "all"}`);
     const t = this.tabs.get(tab);
     if (!t) throw new Error(`Unable to parse range: ${tab}`);
-    const rows = range === "1:1" ? t.rows.slice(0, 1) : t.rows;
-    const rendered = rows.map((row, r) =>
+    const { columns, rowsFrom, rowsTo } = parseRange(range);
+    const rendered = t.rows.slice(rowsFrom, rowsTo).map((row, offset) =>
       trimTrailing(
-        row.map((cell, c) => {
+        row.slice(0, columns).map((cell, c) => {
+          const r = rowsFrom + offset;
           if (r > 0 && t.dateColumns.has(c) && typeof cell === "number") {
             return formatSheetDate(new Date((cell - toSheetSerial(new Date(0))) * MS_PER_DAY));
           }
@@ -55,11 +69,14 @@ class InMemorySpreadsheet implements SpreadsheetClient {
     return trimTrailing(rendered, (row) => row.length === 0);
   }
 
-  async appendValues(tab: string, values: readonly (readonly Cell[])[]) {
-    this.calls.push(`appendValues:${tab}:${values.length}`);
+  async appendValues(tab: string, range: string, values: readonly (readonly Cell[])[]) {
+    this.calls.push(`appendValues:${tab}:${range}:${values.length}`);
     const t = this.tabs.get(tab);
     if (!t) throw new Error(`Unable to parse range: ${tab}`);
-    t.rows.push(...values.map((row) => [...row]));
+    const { columns } = parseRange(range);
+    let insertAt = t.rows.length;
+    while (insertAt > 0 && t.rows[insertAt - 1]!.slice(0, columns).every((cell) => cell === "")) insertAt -= 1;
+    t.rows.splice(insertAt, values.length, ...values.map((row, i) => [...row, ...(t.rows[insertAt + i]?.slice(row.length) ?? [])]));
   }
 
   async addTab(title: string) {
@@ -78,8 +95,23 @@ class InMemorySpreadsheet implements SpreadsheetClient {
 }
 
 const metric: Metric = fakeMetric("deploys", ["published_at", "repo", "id", "name"], async () => []);
+const HEADER = ["published_at", "repo", "id", "name"];
+const RANGE = "A:D";
 const row1 = { published_at: "2026-03-01 10:00:00", repo: "kato-app/kato", id: 100, name: "v1" };
 const row2 = { published_at: "2026-03-02 10:00:00", repo: "kato-app/kato", id: 200, name: null };
+
+describe("a1 helpers", () => {
+  it("converts column indexes to letters and builds the metric's ranges", () => {
+    assert.equal(columnLetter(0), "A");
+    assert.equal(columnLetter(7), "H");
+    assert.equal(columnLetter(25), "Z");
+    assert.equal(columnLetter(26), "AA");
+    assert.equal(columnLetter(27), "AB");
+    assert.equal(columnLetter(701), "ZZ");
+    assert.equal(columnsRange(8), "A:H");
+    assert.equal(headerRange(8), "A1:H1");
+  });
+});
 
 describe("toSheetSerial", () => {
   it("matches Google Sheets' epoch", () => {
@@ -109,17 +141,35 @@ describe("SheetsSink.readRows", () => {
 
   it("maps body rows onto the metric's columns, treating blanks and short rows as null", async () => {
     const sheet = new InMemorySpreadsheet({
-      deploys: [
-        ["published_at", "repo", "id", "name"],
-        ["2026-03-01 10:00:00", "kato-app/kato", "100", ""],
-        ["2026-03-02 10:00:00", "kato-app/kato", "200"],
-      ],
+      deploys: [HEADER, ["2026-03-01 10:00:00", "kato-app/kato", "100", ""], ["2026-03-02 10:00:00", "kato-app/kato", "200"]],
     });
     const rows = await createSheetsSink(sheet, noopLogger).readRows(metric);
     assert.deepEqual(rows, [
       { published_at: "2026-03-01 10:00:00", repo: "kato-app/kato", id: "100", name: null },
       { published_at: "2026-03-02 10:00:00", repo: "kato-app/kato", id: "200", name: null },
     ]);
+  });
+
+  it("ignores helper columns to the right of the metric's block, in the header and the body", async () => {
+    const sheet = new InMemorySpreadsheet({
+      deploys: [
+        [...HEADER, "Week Start Helper"],
+        ["2026-03-01 10:00:00", "kato-app/kato", "100", "v1", "#REF!"],
+        ["", "", "", "", "#REF!"],
+        ["", "", "", "", "#REF!"],
+      ],
+    });
+    const rows = await createSheetsSink(sheet, noopLogger).readRows(metric);
+    assert.deepEqual(rows, [{ published_at: "2026-03-01 10:00:00", repo: "kato-app/kato", id: "100", name: "v1" }]);
+    assert.ok(sheet.calls.includes(`getValues:deploys:${RANGE}`));
+  });
+
+  it("drops rows that are blank across every metric column, such as data cleared by hand", async () => {
+    const sheet = new InMemorySpreadsheet({
+      deploys: [HEADER, ["", "", "", ""], ["2026-03-01 10:00:00", "kato-app/kato", "100", "v1"], ["", "", "", ""]],
+    });
+    const rows = await createSheetsSink(sheet, noopLogger).readRows(metric);
+    assert.equal(rows.length, 1);
   });
 
   it("refuses a tab whose header does not match the metric", async () => {
@@ -142,7 +192,7 @@ describe("SheetsSink.appendRows", () => {
 
     const tab = sheet.tabs.get("deploys");
     assert.ok(tab);
-    assert.deepEqual(tab.rows[0], ["published_at", "repo", "id", "name"]);
+    assert.deepEqual(tab.rows[0], HEADER);
     assert.deepEqual(tab.rows[1], [toSheetSerial(new Date("2026-03-01T10:00:00Z")), "kato-app/kato", 100, "v1"]);
     assert.deepEqual(tab.rows[2], [toSheetSerial(new Date("2026-03-02T10:00:00Z")), "kato-app/kato", 200, ""]);
     assert.ok(sheet.calls.includes(`format:${tab.sheetId}:0:${SHEET_DATE_PATTERN}`));
@@ -161,8 +211,27 @@ describe("SheetsSink.appendRows", () => {
     ]);
   });
 
+  it("appends directly under the last data row even when a helper column runs further down", async () => {
+    const sheet = new InMemorySpreadsheet({
+      deploys: [
+        [...HEADER, "Week Start Helper"],
+        ["2026-03-01 10:00:00", "kato-app/kato", "100", "v1", "#REF!"],
+        ["", "", "", "", "#REF!"],
+        ["", "", "", "", "#REF!"],
+      ],
+    });
+    const sink = createSheetsSink(sheet, noopLogger);
+
+    await sink.appendRows(metric, [row2]);
+
+    const tab = sheet.tabs.get("deploys")!;
+    assert.deepEqual(tab.rows[2]?.slice(0, 4), [toSheetSerial(new Date("2026-03-02T10:00:00Z")), "kato-app/kato", 200, ""]);
+    assert.equal(tab.rows[2]?.[4], "#REF!", "helper column left alone");
+    assert.ok(sheet.calls.includes(`appendValues:deploys:${RANGE}:1`));
+  });
+
   it("lists tabs once per run and does not re-read a header it verified while reading", async () => {
-    const sheet = new InMemorySpreadsheet({ deploys: [["published_at", "repo", "id", "name"]] });
+    const sheet = new InMemorySpreadsheet({ deploys: [HEADER] });
     const sink = createSheetsSink(sheet, noopLogger);
 
     await sink.readRows(metric);
@@ -172,22 +241,22 @@ describe("SheetsSink.appendRows", () => {
 
     assert.deepEqual(sheet.calls, [
       "listTabs",
-      "getValues:deploys:all",
-      "appendValues:deploys:1",
+      `getValues:deploys:${RANGE}`,
+      `appendValues:deploys:${RANGE}:1`,
       `format:100:0:${SHEET_DATE_PATTERN}`,
       "addTab:other",
-      "appendValues:other:1",
-      "appendValues:other:1",
+      `appendValues:other:${RANGE}:1`,
+      `appendValues:other:${RANGE}:1`,
       `format:101:0:${SHEET_DATE_PATTERN}`,
     ]);
   });
 
   it("still checks the header before appending when nothing has been read in this run", async () => {
-    const sheet = new InMemorySpreadsheet({ deploys: [["published_at", "repo", "id", "name"]] });
+    const sheet = new InMemorySpreadsheet({ deploys: [HEADER] });
 
     await createSheetsSink(sheet, noopLogger).appendRows(metric, [row1]);
 
-    assert.ok(sheet.calls.includes("getValues:deploys:1:1"));
+    assert.ok(sheet.calls.includes("getValues:deploys:A1:D1"));
     assert.equal(sheet.tabs.get("deploys")?.rows.length, 2);
   });
 
@@ -223,7 +292,7 @@ describe("SheetsSink.appendRows", () => {
 
     const formats = sheet.calls.filter((c) => c.startsWith("format"));
     assert.equal(formats.length, 2);
-    assert.ok(sheet.calls.indexOf(formats[0]!) > sheet.calls.indexOf("appendValues:deploys:1"));
+    assert.ok(sheet.calls.indexOf(formats[0]!) > sheet.calls.indexOf(`appendValues:deploys:${RANGE}:1`));
   });
 
   it("refuses to append under a mismatched header", async () => {

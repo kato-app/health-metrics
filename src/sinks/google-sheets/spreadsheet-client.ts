@@ -8,10 +8,18 @@ export type Cell = string | number | boolean;
 export interface SpreadsheetClient {
   /** Tab title to sheet id for every tab in the spreadsheet. */
   listTabs(): Promise<Map<string, number>>;
-  /** Cell values as the user sees them (formatted text), row-major, trailing empties trimmed. */
+  /**
+   * Cell values as the user sees them (formatted text), row-major, restricted
+   * to `range` (A1 notation within the tab, e.g. `A:H`; the whole tab if
+   * omitted). Trailing empty cells and rows are trimmed.
+   */
   getValues(tab: string, range?: string): Promise<string[][]>;
-  /** Appends rows after the last row that has data. */
-  appendValues(tab: string, values: readonly (readonly Cell[])[]): Promise<void>;
+  /**
+   * Appends rows below the last row that has data within `range`, starting at
+   * the range's first column. Data outside the range (a user's helper columns)
+   * does not affect where the rows land.
+   */
+  appendValues(tab: string, range: string, values: readonly (readonly Cell[])[]): Promise<void>;
   /** Creates an empty tab and returns its sheet id. */
   addTab(title: string): Promise<number>;
   /** Applies a date-time number format to whole columns (zero-based indexes), skipping the header row. */

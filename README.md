@@ -24,8 +24,8 @@ cp .env.example .env   # then fill in the values
 | --- | --- |
 | `spreadsheetId` | The Google Sheet all metrics write to. |
 | `startDate` | Earliest date (UTC, inclusive) backfilled when a metric's tab is empty. |
-| `github.owner` | GitHub organisation or user that owns the repositories. |
-| `github.repos` | Repositories to collect from. |
+| `github.owner` | GitHub **organisation** whose repositories are discovered (see [Repository discovery](#repository-discovery)). A user account will not work. |
+| `github.excludeRepos` | Repository names (without the owner) to leave out of every metric even though they have releases. Optional; defaults to `[]`. |
 | `logging.file` | Project-relative path of the JSON log file, appended to on every run. |
 
 ## CLI
@@ -58,7 +58,7 @@ npm start -- list # run the compiled CLI (same commands as above)
 3. Share the target spreadsheet with the service account's email address as an **Editor**.
 4. Point `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in `.env` at the key file (relative paths resolve from the project root). The run aborts before contacting anything if the file does not exist.
 
-**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row. The tab and header are created on the first write; an existing tab must have a header that matches the metric's columns exactly (a blank first row above data counts as a mismatch), otherwise the run fails before writing anything. New rows are appended after the last row with data. The tab list is fetched once per run and a header verified while reading is not re-read before appending.
+**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row starting at column A. The tab and header are created on the first write; an existing tab's first cells must match the metric's columns exactly (a blank first row above data counts as a mismatch), otherwise the run fails before writing anything. The metric only ever reads and writes its own block of columns, so you can add helper columns and formulas to the right of the data: they are ignored by the header check, and new rows are appended directly under the last row that has data in the metric's columns even if a helper formula runs further down. Rows left blank across all metric columns (for example data cleared by hand) are ignored when reading. The tab list is fetched once per run and a header verified while reading is not re-read before appending.
 
 **Encoding.** Rows are written with the `RAW` input option, so Sheets never reinterprets text: a release named `6.5` stays text and a value beginning with `=` is never treated as a formula. Date-time cells are the one exception. They are written as native Sheets serial numbers, and any column that holds one in the rows being written is given the number format `yyyy-mm-dd hh:mm:ss` after every write (rows inserted by an append do not inherit column formatting), so they sort, filter and chart as dates and read back as exactly the text the metric wrote. Blank cells read back as `null`; every other value reads back as text, which is why metrics compare ids as strings.
 
@@ -81,6 +81,18 @@ Console output is human-readable at `info` level (`debug` with `--verbose`). Eve
    4. Append the rows to the tab, oldest first. A metric with no new rows writes nothing.
 4. A failure in one metric is logged and does not stop the others. The process exits non-zero if any failed.
 
+## Repository discovery
+
+Metrics do not use a fixed list of repositories. The first time a metric in a run asks for repositories, the app queries the GitHub GraphQL endpoint (`https://api.github.com/graphql`, same token as the REST calls) for every repository in `github.owner`, 50 per page, following `endCursor` until `hasNextPage` is false. Every repository with `releases.totalCount > 0` is kept, in the order GitHub returns them, and any name listed in `github.excludeRepos` is then removed. The result is cached for the rest of the run, so `run --all` discovers once however many metrics use it, and `metrics list` or a dry run of a non-GitHub metric never touches GitHub.
+
+Rules and consequences:
+
+- Archived repositories and forks are included if they have releases. Use `github.excludeRepos` to leave one out.
+- `totalCount` counts drafts and prereleases, so a repository whose only releases are drafts is discovered; the metrics' own exclusion rules then produce no rows for it.
+- A repository that is deleted, transferred, or loses all its releases simply stops being discovered. Rows already written for it stay in the sheet.
+- An exclusion that matches no discovered repository logs a warning, since it is probably a typo.
+- If discovery fails (network, token without access to the organisation), every metric that needs repositories fails for that run. There is no fallback to a stale list.
+
 ## Metrics
 
 Each metric owns one tab in the spreadsheet, named exactly after the metric. Metrics emit dates as `YYYY-MM-DD HH:MM:SS` text in UTC; the sink stores them as native date-times (see Google Sheets above).
@@ -89,7 +101,7 @@ Each metric owns one tab in the spreadsheet, named exactly after the metric. Met
 
 One row per production deployment, where a deployment is a **published GitHub release** in any of the configured repositories.
 
-**Source.** `GET /repos/{owner}/{repo}/releases` via Octokit, 100 per page, for each repository in `config.github.repos`. GitHub returns releases newest-created first.
+**Source.** `GET /repos/{owner}/{repo}/releases` via Octokit, 100 per page, for each repository returned by [Repository discovery](#repository-discovery). GitHub returns releases newest-created first.
 
 **Columns**, in order:
 

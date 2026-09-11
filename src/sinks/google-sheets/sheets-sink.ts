@@ -2,11 +2,17 @@ import type { CellValue, Metric, MetricRow } from "../../core/metric.js";
 import { SHEET_DATE_PATTERN, parseSheetDate, toSheetSerial } from "../../core/sheet-date.js";
 import type { MetricSink } from "../../core/sink.js";
 import type { Logger } from "../../logging/logger.js";
+import { columnsRange, headerRange } from "./a1.js";
 import type { Cell, SpreadsheetClient } from "./spreadsheet-client.js";
 
 /**
  * Stores each metric in a tab named after it, with the metric's columns as the
  * header row.
+ *
+ * A metric owns only its own columns, starting at A. Everything is read from
+ * and appended within that block, so people can add helper columns and
+ * formulas to the right of the data without breaking the header check or
+ * pushing new rows below their formulas.
  *
  * Encoding: rows are written RAW so Sheets never reinterprets text as a number,
  * date or formula. Cells in sheet-date format are the exception: they become
@@ -39,7 +45,7 @@ export function createSheetsSink(client: SpreadsheetClient, logger: Logger): Met
   }
 
   async function writeHeader(metric: Metric): Promise<void> {
-    await client.appendValues(metric.name, [[...metric.columns]]);
+    await client.appendValues(metric.name, columnsRange(metric.columns.length), [[...metric.columns]]);
     log.info("Wrote header", { tab: metric.name });
     verifiedHeaders.add(metric.name);
   }
@@ -54,7 +60,7 @@ export function createSheetsSink(client: SpreadsheetClient, logger: Logger): Met
       log.info("Created tab", { tab: metric.name });
       await writeHeader(metric);
     } else if (!verifiedHeaders.has(metric.name)) {
-      const [header] = await client.getValues(metric.name, "1:1");
+      const [header] = await client.getValues(metric.name, headerRange(metric.columns.length));
       if (header?.length) assertHeader(metric, header);
       else await writeHeader(metric);
     }
@@ -65,19 +71,21 @@ export function createSheetsSink(client: SpreadsheetClient, logger: Logger): Met
     async readRows(metric) {
       if (!(await loadTabs()).has(metric.name)) return [];
 
-      const [header, ...body] = await client.getValues(metric.name);
+      const [header, ...body] = await client.getValues(metric.name, columnsRange(metric.columns.length));
       // A tab with nothing in it is fine (first write adds the header); a blank
       // header row above data is not, since appending would land below the data.
       if (header === undefined) return [];
       assertHeader(metric, header);
 
-      return body.map((cells) => decodeRow(metric, cells));
+      // A row that is blank across every metric column (e.g. cleared by hand) carries nothing.
+      return body.filter((cells) => cells.some((cell) => cell !== "")).map((cells) => decodeRow(metric, cells));
     },
 
     async appendRows(metric, rows) {
       if (rows.length === 0) return;
       const sheetId = await ensureTabWithHeader(metric);
-      await client.appendValues(metric.name, rows.map((row) => encodeRow(metric, row)));
+      const range = columnsRange(metric.columns.length);
+      await client.appendValues(metric.name, range, rows.map((row) => encodeRow(metric, row)));
 
       // Rows inserted by append do not inherit column formatting, so re-apply it
       // to the whole column after every write. Idempotent and one API call.

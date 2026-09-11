@@ -1,5 +1,6 @@
 import type { Config } from "../config/schema.js";
 import type { Logger } from "../logging/logger.js";
+import type { RepoRegistry } from "../sources/github/repo-registry.js";
 import type { GitHubSource } from "../sources/github/source.js";
 
 /** A value that can be written to a single spreadsheet cell. */
@@ -39,6 +40,8 @@ export interface MetricDependencies {
   readonly config: Config;
   readonly logger: Logger;
   readonly github: GitHubSource;
+  /** Repositories to collect from, discovered once per run. Ask at collect time, not construction time. */
+  readonly repos: RepoRegistry;
 }
 
 export type MetricFactory = (deps: MetricDependencies) => Metric;

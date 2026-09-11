@@ -78,11 +78,11 @@ export function createGoogleSheetsClient(options: GoogleClientOptions): Spreadsh
       return (response.data.values ?? []).map((row: unknown[]) => row.map(String));
     },
 
-    async appendValues(tab, values) {
+    async appendValues(tab, range, values) {
       await call(() =>
         api.spreadsheets.values.append({
           spreadsheetId,
-          range: tabRange(tab),
+          range: tabRange(tab, range),
           valueInputOption: "RAW",
           insertDataOption: "INSERT_ROWS",
           requestBody: { values: values.map((row) => [...row] as Cell[]) },

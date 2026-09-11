@@ -3,7 +3,7 @@
   "startDate": "2026-01-01",
   "github": {
     "owner": "kato-app",
-    "repos": ["kato", "kato-settings"]
+    "excludeRepos": []
   },
   "logging": {
     "file": "logs/app.log"

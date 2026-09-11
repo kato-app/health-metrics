@@ -5,8 +5,13 @@ export const configSchema = z.object({
   /** Earliest date (inclusive, UTC) from which metrics are backfilled, as YYYY-MM-DD. */
   startDate: z.iso.date(),
   github: z.object({
+    /** GitHub organisation whose repositories are discovered. Must be an organisation, not a user. */
     owner: z.string().min(1),
-    repos: z.array(z.string().min(1)).min(1),
+    /**
+     * Repositories to leave out of every metric even though discovery found
+     * releases in them. Names only, without the owner. Empty means no exclusions.
+     */
+    excludeRepos: z.array(z.string().min(1)).default([]),
   }),
   logging: z.object({
     /** Project-relative path of the JSON log file that is appended to on every run. */
