@@ -1,11 +1,15 @@
+import path from "node:path";
 import { Command } from "commander";
-import { ConfigError, fromProjectRoot, loadConfig, loadEnv } from "./config/load.js";
+import { ConfigError, fromProjectRoot, loadConfig, loadEnv, projectRoot } from "./config/load.js";
+import type { Config, Env } from "./config/schema.js";
 import type { Metric } from "./core/metric.js";
 import { runMetrics } from "./core/runner.js";
 import type { MetricSink } from "./core/sink.js";
 import { createLogger } from "./logging/create-logger.js";
 import { errorContext, type Logger } from "./logging/logger.js";
 import { createMetrics } from "./metrics/index.js";
+import { createGoogleSheetsClient } from "./sinks/google-sheets/google-client.js";
+import { createSheetsSink } from "./sinks/google-sheets/sheets-sink.js";
 import { createOctokitSource } from "./sources/github/octokit-source.js";
 import type { GitHubSource } from "./sources/github/source.js";
 
@@ -44,9 +48,12 @@ function isExpectedError(error: unknown): error is Error {
   return error instanceof UsageError || error instanceof ConfigError;
 }
 
-async function createSink(_logger: Logger): Promise<MetricSink> {
-  // Increment 3 replaces this with the Google Sheets sink.
-  throw new Error("No sink configured yet");
+function createSink(config: Config, env: Env, logger: Logger): MetricSink {
+  const client = createGoogleSheetsClient({
+    spreadsheetId: config.spreadsheetId,
+    keyFile: path.resolve(projectRoot, env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE),
+  });
+  return createSheetsSink(client, logger);
 }
 
 async function runCommand(name: string | undefined, opts: RunCommandOptions): Promise<number> {
@@ -60,7 +67,7 @@ async function runCommand(name: string | undefined, opts: RunCommandOptions): Pr
     const env = loadEnv();
     const github = createOctokitSource({ token: env.GITHUB_TOKEN, logger });
     const metrics = selectMetrics(createMetrics({ config, logger, github }), name, opts.all);
-    const sink = await createSink(logger);
+    const sink = createSink(config, env, logger);
     const results = await runMetrics(metrics, { sink, logger, dryRun: opts.dryRun ?? false });
 
     const succeeded = results.filter((r) => r.status === "ok");

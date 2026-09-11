@@ -20,6 +20,23 @@ export function parseSheetDate(value: unknown): Date | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
+/** Number format pattern that displays a serial date-time in the same shape as `formatSheetDate`. */
+export const SHEET_DATE_PATTERN = "yyyy-mm-dd hh:mm:ss";
+
+const MS_PER_DAY = 86_400_000;
+/** Days between the Sheets epoch (1899-12-30) and the Unix epoch. */
+const SHEETS_EPOCH_OFFSET_DAYS = 25_569;
+
+/**
+ * Converts a date to a Google Sheets serial number (days since 1899-12-30,
+ * fractional part is the time of day). Written as a number and paired with
+ * `SHEET_DATE_PATTERN`, the cell is a native date-time the sheet can sort,
+ * filter and chart, and it reads back as `formatSheetDate` text.
+ */
+export function toSheetSerial(date: Date): number {
+  return date.getTime() / MS_PER_DAY + SHEETS_EPOCH_OFFSET_DAYS;
+}
+
 /** Midnight UTC at the start of a `YYYY-MM-DD` date. */
 export function startOfUtcDay(isoDate: string): Date {
   return new Date(`${isoDate}T00:00:00Z`);

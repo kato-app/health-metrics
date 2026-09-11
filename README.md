@@ -49,6 +49,21 @@ npm run build     # compile to dist/
 npm start -- list # run the compiled CLI (same commands as above)
 ```
 
+## Google Sheets
+
+**Auth.** The CLI authenticates as a Google service account, which needs no browser flow or token refresh:
+
+1. In Google Cloud, create a project (or reuse one) and enable the **Google Sheets API**.
+2. Create a service account, then create a JSON key for it and save the file outside version control (the default `.gitignore` already ignores `google-service-account*.json`).
+3. Share the target spreadsheet with the service account's email address as an **Editor**.
+4. Point `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in `.env` at the key file (relative paths resolve from the project root).
+
+**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row. The tab and header are created on the first write; an existing tab must have a header that matches the metric's columns exactly, otherwise the run fails before writing anything. New rows are appended after the last row with data.
+
+**Encoding.** Rows are written with the `RAW` input option, so Sheets never reinterprets text: a release named `6.5` stays text and a value beginning with `=` is never treated as a formula. Date-time cells are the one exception. They are written as native Sheets serial numbers, and their columns are given the number format `yyyy-mm-dd hh:mm:ss` after every write (rows inserted by an append do not inherit column formatting), so they sort, filter and chart as dates and read back as exactly the text the metric wrote. Blank cells read back as `null`; every other value reads back as text, which is why metrics compare ids as strings.
+
+If someone changes the date column's display format in the sheet, the watermark becomes unreadable: the metric logs a warning and re-pages from `startDate`, and id de-duplication keeps the tab free of duplicates.
+
 ## Logging
 
 Console output is human-readable at `info` level (`debug` with `--verbose`). Every run also appends newline-delimited JSON at `debug` level to the file named in `config.json`, so local history survives between runs. The application talks to a `Logger` interface in `src/logging/logger.ts`; the pino implementation behind it is the only place a real transport is configured, so shipping logs elsewhere later is a change confined to that module.
