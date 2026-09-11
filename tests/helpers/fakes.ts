@@ -1,7 +1,14 @@
 import type { Config } from "../../src/config/schema.js";
 import type { CollectContext, Metric, MetricRow } from "../../src/core/metric.js";
 import type { MetricSink } from "../../src/core/sink.js";
-import type { GitHubRelease, GitHubSource, RepoRef } from "../../src/sources/github/source.js";
+import {
+  pullRequestKey,
+  type GitHubPullRequest,
+  type GitHubRelease,
+  type GitHubSource,
+  type PullRequestRef,
+  type RepoRef,
+} from "../../src/sources/github/source.js";
 
 /** A complete, valid `config.json`; spread and override the part a test cares about. */
 export const validConfig: Config = {
@@ -38,8 +45,20 @@ export function release(overrides: Partial<GitHubRelease> & { id: number }): Git
 export class FakeGitHubSource implements GitHubSource {
   readonly yielded = new Map<string, number>();
   discoveryCalls = 0;
+  pullRequestCalls = 0;
 
-  constructor(private readonly releasesByRepo: Record<string, GitHubRelease[]>) {}
+  constructor(
+    private readonly releasesByRepo: Record<string, GitHubRelease[]>,
+    /** Keyed by `owner/name#number`, as `pullRequestKey` produces. */
+    private readonly pullRequests: Record<string, GitHubPullRequest> = {},
+  ) {}
+
+  async getPullRequest(ref: PullRequestRef): Promise<GitHubPullRequest> {
+    this.pullRequestCalls += 1;
+    const pr = this.pullRequests[pullRequestKey(ref)];
+    if (!pr) throw new Error(`Not Found: ${pullRequestKey(ref)}`);
+    return pr;
+  }
 
   /** Every configured repo with at least one release, mirroring the GraphQL discovery. */
   async listReposWithReleases(_org: string): Promise<string[]> {

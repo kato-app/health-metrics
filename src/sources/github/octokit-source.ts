@@ -1,7 +1,17 @@
 import { Octokit } from "octokit";
 import type { Logger } from "../../logging/logger.js";
 import { discoverReposWithReleases } from "./discover-repos.js";
-import { releaseSchema, repoFullName, type GitHubRelease, type GitHubSource, type RepoRef } from "./source.js";
+import {
+  pullRequestKey,
+  pullRequestSchema,
+  releaseSchema,
+  repoFullName,
+  type GitHubPullRequest,
+  type GitHubRelease,
+  type GitHubSource,
+  type PullRequestRef,
+  type RepoRef,
+} from "./source.js";
 
 export interface OctokitSourceOptions {
   readonly token: string;
@@ -40,6 +50,15 @@ export function createOctokitSource(options: OctokitSourceOptions): GitHubSource
     listReposWithReleases(org: string): Promise<string[]> {
       // octokit.graphql posts to https://api.github.com/graphql with the same token.
       return discoverReposWithReleases((query, variables) => octokit.graphql(query, variables), org, logger);
+    },
+
+    async getPullRequest(ref: PullRequestRef): Promise<GitHubPullRequest> {
+      const response = await octokit.rest.pulls.get({ owner: ref.repo.owner, repo: ref.repo.name, pull_number: ref.number });
+      const parsed = pullRequestSchema.safeParse(response.data);
+      if (!parsed.success) {
+        throw new Error(`Unexpected pull request payload for ${pullRequestKey(ref)}: ${parsed.error.message}`, { cause: parsed.error });
+      }
+      return parsed.data;
     },
   };
 }

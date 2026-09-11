@@ -17,7 +17,7 @@ import type { GitHubSource } from "./sources/github/source.js";
 function offline(): never {
   throw new Error("GitHub is not available in this command");
 }
-const offlineGitHub: GitHubSource = { listReleases: offline, listReposWithReleases: offline };
+const offlineGitHub: GitHubSource = { listReleases: offline, listReposWithReleases: offline, getPullRequest: offline };
 const offlineRepos: RepoRegistry = { list: offline };
 
 interface RunCommandOptions {

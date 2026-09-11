@@ -139,6 +139,28 @@ describe("JiraClient.searchIssues", () => {
   });
 });
 
+describe("JiraClient rate limiting", () => {
+  it("waits for Retry-After on a 429 and then succeeds, giving up after a few attempts", async () => {
+    let calls = 0;
+    const waits: number[] = [];
+    const fetchImpl = (async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response("slow down", { status: 429, headers: { "retry-after": "2" } })
+        : new Response(JSON.stringify([{ id: "1", statusCategory: { key: "new" } }]), { status: 200 });
+    }) as typeof fetch;
+    const jira = createJiraClient({ baseUrl: BASE, email: "me@example.com", token: "tok", logger: noopLogger, fetch: fetchImpl, sleep: async (ms) => void waits.push(ms) });
+
+    assert.equal((await jira.listStatusCategories()).size, 1);
+    assert.deepEqual(waits, [2000]);
+
+    const always429 = (async () => new Response("no", { status: 429 })) as typeof fetch;
+    const stuck = createJiraClient({ baseUrl: BASE, email: "me@example.com", token: "tok", logger: noopLogger, fetch: always429, sleep: async (ms) => void waits.push(ms) });
+    await assert.rejects(stuck.listStatusCategories(), /HTTP 429.*rate limiting/);
+    assert.deepEqual(waits.slice(1), [1000, 2000, 4000], "exponential backoff without a Retry-After header");
+  });
+});
+
 describe("JiraClient.listStatusCategories", () => {
   it("maps status ids to categories", async () => {
     const { jira } = client({

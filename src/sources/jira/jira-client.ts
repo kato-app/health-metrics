@@ -20,9 +20,21 @@ export interface JiraClientOptions {
   readonly logger: Logger;
   /** Injected for tests. Defaults to the global fetch. */
   readonly fetch?: typeof fetch;
+  /** Injected for tests. Defaults to a real delay. */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 const PAGE_SIZE = 100;
+
+/** Jira Cloud rate limits per user and answers 429 with Retry-After; a few waits usually clear it. */
+const MAX_RATE_LIMIT_RETRIES = 3;
+const MAX_RETRY_WAIT_MS = 60_000;
+
+function retryDelayMs(response: Response, attempt: number): number {
+  const header = Number(response.headers.get("retry-after"));
+  const seconds = Number.isFinite(header) && header > 0 ? header : 2 ** attempt;
+  return Math.min(seconds * 1000, MAX_RETRY_WAIT_MS);
+}
 
 /** Fields the application reads; requesting only these keeps search responses small. */
 const ISSUE_FIELDS = ["summary", "issuetype", "project", "status", "resolution", "created", "resolutiondate"];
@@ -96,14 +108,25 @@ export function describeJiraError(status: number, path: string, body: string): E
 export function createJiraClient(options: JiraClientOptions): JiraSource {
   const logger = options.logger.child({ source: "jira" });
   const fetchImpl = options.fetch ?? fetch;
+  const sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const authorization = `Basic ${Buffer.from(`${options.email}:${options.token}`).toString("base64")}`;
+
+  async function fetchWithRateLimitRetry(url: URL, path: string): Promise<Response> {
+    for (let attempt = 0; ; attempt += 1) {
+      const response = await fetchImpl(url, { headers: { authorization, accept: "application/json" } });
+      if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return response;
+      const delay = retryDelayMs(response, attempt);
+      logger.warn("Jira rate limited the request; waiting before retrying", { path, attempt: attempt + 1, delayMs: delay });
+      await sleep(delay);
+    }
+  }
 
   async function get<T>(path: string, params: Record<string, string | undefined>, schema: z.ZodType<T>): Promise<T> {
     const url = new URL(`${baseUrl}${path}`);
     for (const [key, value] of Object.entries(params)) if (value !== undefined) url.searchParams.set(key, value);
 
-    const response = await fetchImpl(url, { headers: { authorization, accept: "application/json" } });
+    const response = await fetchWithRateLimitRetry(url, path);
     const text = await response.text();
     if (!response.ok) throw describeJiraError(response.status, path, text);
 
