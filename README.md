@@ -56,13 +56,15 @@ npm start -- list # run the compiled CLI (same commands as above)
 1. In Google Cloud, create a project (or reuse one) and enable the **Google Sheets API**.
 2. Create a service account, then create a JSON key for it and save the file outside version control (the default `.gitignore` already ignores `google-service-account*.json`).
 3. Share the target spreadsheet with the service account's email address as an **Editor**.
-4. Point `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in `.env` at the key file (relative paths resolve from the project root).
+4. Point `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in `.env` at the key file (relative paths resolve from the project root). The run aborts before contacting anything if the file does not exist.
 
-**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row. The tab and header are created on the first write; an existing tab must have a header that matches the metric's columns exactly, otherwise the run fails before writing anything. New rows are appended after the last row with data.
+**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row. The tab and header are created on the first write; an existing tab must have a header that matches the metric's columns exactly (a blank first row above data counts as a mismatch), otherwise the run fails before writing anything. New rows are appended after the last row with data. The tab list is fetched once per run and a header verified while reading is not re-read before appending.
 
-**Encoding.** Rows are written with the `RAW` input option, so Sheets never reinterprets text: a release named `6.5` stays text and a value beginning with `=` is never treated as a formula. Date-time cells are the one exception. They are written as native Sheets serial numbers, and their columns are given the number format `yyyy-mm-dd hh:mm:ss` after every write (rows inserted by an append do not inherit column formatting), so they sort, filter and chart as dates and read back as exactly the text the metric wrote. Blank cells read back as `null`; every other value reads back as text, which is why metrics compare ids as strings.
+**Encoding.** Rows are written with the `RAW` input option, so Sheets never reinterprets text: a release named `6.5` stays text and a value beginning with `=` is never treated as a formula. Date-time cells are the one exception. They are written as native Sheets serial numbers, and any column that holds one in the rows being written is given the number format `yyyy-mm-dd hh:mm:ss` after every write (rows inserted by an append do not inherit column formatting), so they sort, filter and chart as dates and read back as exactly the text the metric wrote. Blank cells read back as `null`; every other value reads back as text, which is why metrics compare ids as strings.
 
 If someone changes the date column's display format in the sheet, the watermark becomes unreadable: the metric logs a warning and re-pages from `startDate`, and id de-duplication keeps the tab free of duplicates.
+
+**Errors.** A failed Sheets request is reported as `Google Sheets request failed (HTTP <status>): <API message>` with a hint for the common setup mistakes: `403` means the spreadsheet is not shared with the service account (or the Sheets API is not enabled in its project) and `404` means `spreadsheetId` is wrong. The original API error is logged as the `cause`.
 
 ## Logging
 
@@ -81,7 +83,7 @@ Console output is human-readable at `info` level (`debug` with `--verbose`). Eve
 
 ## Metrics
 
-Each metric owns one tab in the spreadsheet, named exactly after the metric. Dates are written as `YYYY-MM-DD HH:MM:SS` in UTC so Google Sheets parses them as native date-times.
+Each metric owns one tab in the spreadsheet, named exactly after the metric. Metrics emit dates as `YYYY-MM-DD HH:MM:SS` text in UTC; the sink stores them as native date-times (see Google Sheets above).
 
 ### deployment-frequency
 

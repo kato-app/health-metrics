@@ -14,6 +14,25 @@ function tabRange(tab: string, range?: string): string {
   return range ? `${quoted}!${range}` : quoted;
 }
 
+/**
+ * Turns a failed Sheets call into an error that says what to check. The API
+ * client throws a `GaxiosError` whose message is the API's own (terse) text and
+ * whose `status` is the HTTP status; the two failures a new setup hits most
+ * (sheet not shared, wrong id) get a hint. The original error is kept as `cause`.
+ */
+export function describeSheetsError(error: unknown, spreadsheetId: string): Error {
+  const status = typeof error === "object" && error !== null && "status" in error ? error.status : undefined;
+  const reason = error instanceof Error ? error.message : String(error);
+  const hints: Record<number, string> = {
+    401: "The service account key was rejected; check that it is valid and not revoked",
+    403: "Share the spreadsheet with the service account's email as an Editor and make sure the Google Sheets API is enabled in its project",
+    404: `No spreadsheet with id "${spreadsheetId}"; check spreadsheetId in config.json`,
+  };
+  const hint = typeof status === "number" ? hints[status] : undefined;
+  const where = typeof status === "number" ? ` (HTTP ${status})` : "";
+  return new Error(`Google Sheets request failed${where}: ${reason}${hint ? `. ${hint}` : ""}`, { cause: error });
+}
+
 /** `SpreadsheetClient` backed by the Google Sheets v4 API with service account auth. */
 export function createGoogleSheetsClient(options: GoogleClientOptions): SpreadsheetClient {
   const auth = new GoogleAuth({
@@ -23,14 +42,22 @@ export function createGoogleSheetsClient(options: GoogleClientOptions): Spreadsh
   const api = sheets({ version: "v4", auth });
   const { spreadsheetId } = options;
 
+  async function call<T>(request: () => Promise<T>): Promise<T> {
+    try {
+      return await request();
+    } catch (error) {
+      throw describeSheetsError(error, spreadsheetId);
+    }
+  }
+
   async function batchUpdate(requests: sheets_v4.Schema$Request[]): Promise<sheets_v4.Schema$BatchUpdateSpreadsheetResponse> {
-    const response = await api.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+    const response = await call(() => api.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } }));
     return response.data;
   }
 
   return {
     async listTabs() {
-      const response = await api.spreadsheets.get({ spreadsheetId, fields: "sheets.properties(sheetId,title)" });
+      const response = await call(() => api.spreadsheets.get({ spreadsheetId, fields: "sheets.properties(sheetId,title)" }));
       const tabs = new Map<string, number>();
       for (const sheet of response.data.sheets ?? []) {
         const { title, sheetId } = sheet.properties ?? {};
@@ -40,23 +67,27 @@ export function createGoogleSheetsClient(options: GoogleClientOptions): Spreadsh
     },
 
     async getValues(tab, range) {
-      const response = await api.spreadsheets.values.get({
-        spreadsheetId,
-        range: tabRange(tab, range),
-        valueRenderOption: "FORMATTED_VALUE",
-      });
+      const response = await call(() =>
+        api.spreadsheets.values.get({
+          spreadsheetId,
+          range: tabRange(tab, range),
+          valueRenderOption: "FORMATTED_VALUE",
+        }),
+      );
       // FORMATTED_VALUE always yields strings; the API types it loosely as any[][].
       return (response.data.values ?? []).map((row: unknown[]) => row.map(String));
     },
 
     async appendValues(tab, values) {
-      await api.spreadsheets.values.append({
-        spreadsheetId,
-        range: tabRange(tab),
-        valueInputOption: "RAW",
-        insertDataOption: "INSERT_ROWS",
-        requestBody: { values: values.map((row) => [...row] as Cell[]) },
-      });
+      await call(() =>
+        api.spreadsheets.values.append({
+          spreadsheetId,
+          range: tabRange(tab),
+          valueInputOption: "RAW",
+          insertDataOption: "INSERT_ROWS",
+          requestBody: { values: values.map((row) => [...row] as Cell[]) },
+        }),
+      );
     },
 
     async addTab(title) {

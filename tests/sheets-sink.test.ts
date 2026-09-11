@@ -1,16 +1,24 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Metric } from "../src/core/metric.js";
-import { SHEET_DATE_PATTERN, toSheetSerial } from "../src/core/sheet-date.js";
+import { MS_PER_DAY, SHEET_DATE_PATTERN, formatSheetDate, toSheetSerial } from "../src/core/sheet-date.js";
 import { noopLogger } from "../src/logging/logger.js";
 import { createSheetsSink, encodeCell } from "../src/sinks/google-sheets/sheets-sink.js";
 import type { Cell, SpreadsheetClient } from "../src/sinks/google-sheets/spreadsheet-client.js";
 import { fakeMetric } from "./helpers/fakes.js";
 
+/** Drops trailing empty entries, as the values API does for cells in a row and rows in a range. */
+function trimTrailing<T>(items: T[], isEmpty: (item: T) => boolean): T[] {
+  let end = items.length;
+  while (end > 0 && isEmpty(items[end - 1]!)) end -= 1;
+  return items.slice(0, end);
+}
+
 /**
  * In-memory spreadsheet. Stores cells as written and renders them the way the
- * real API does with FORMATTED_VALUE: everything becomes text, and serials in
- * a date-formatted column render with the sheet-date pattern.
+ * real API does with FORMATTED_VALUE: everything becomes text, serials in a
+ * date-formatted column render with the sheet-date pattern, and trailing empty
+ * cells and rows are omitted.
  */
 class InMemorySpreadsheet implements SpreadsheetClient {
   readonly tabs = new Map<string, { sheetId: number; rows: Cell[][]; dateColumns: Set<number> }>();
@@ -33,14 +41,18 @@ class InMemorySpreadsheet implements SpreadsheetClient {
     const t = this.tabs.get(tab);
     if (!t) throw new Error(`Unable to parse range: ${tab}`);
     const rows = range === "1:1" ? t.rows.slice(0, 1) : t.rows;
-    return rows.map((row, r) =>
-      row.map((cell, c) => {
-        if (r > 0 && t.dateColumns.has(c) && typeof cell === "number") {
-          return new Date((cell - 25_569) * 86_400_000).toISOString().slice(0, 19).replace("T", " ");
-        }
-        return String(cell);
-      }),
+    const rendered = rows.map((row, r) =>
+      trimTrailing(
+        row.map((cell, c) => {
+          if (r > 0 && t.dateColumns.has(c) && typeof cell === "number") {
+            return formatSheetDate(new Date((cell - toSheetSerial(new Date(0))) * MS_PER_DAY));
+          }
+          return String(cell);
+        }),
+        (cell) => cell === "",
+      ),
     );
+    return trimTrailing(rendered, (row) => row.length === 0);
   }
 
   async appendValues(tab: string, values: readonly (readonly Cell[])[]) {
@@ -59,7 +71,9 @@ class InMemorySpreadsheet implements SpreadsheetClient {
 
   async formatDateTimeColumns(sheetId: number, columns: readonly number[], pattern: string) {
     this.calls.push(`format:${sheetId}:${columns.join(",")}:${pattern}`);
-    for (const t of this.tabs.values()) if (t.sheetId === sheetId) columns.forEach((c) => t.dateColumns.add(c));
+    const t = [...this.tabs.values()].find((tab) => tab.sheetId === sheetId);
+    if (!t) throw new Error(`No sheet with id: ${sheetId}`);
+    columns.forEach((c) => t.dateColumns.add(c));
   }
 }
 
@@ -112,6 +126,11 @@ describe("SheetsSink.readRows", () => {
     const sheet = new InMemorySpreadsheet({ deploys: [["published_at", "repo", "id"]] });
     await assert.rejects(createSheetsSink(sheet, noopLogger).readRows(metric), /expects \[published_at, repo, id, name\]/);
   });
+
+  it("refuses a tab with data under a blank header row, since an append would land below the data", async () => {
+    const sheet = new InMemorySpreadsheet({ deploys: [[], ["2026-03-01 10:00:00", "kato-app/kato", "100", "v1"]] });
+    await assert.rejects(createSheetsSink(sheet, noopLogger).readRows(metric), /has columns \[\] but/);
+  });
 });
 
 describe("SheetsSink.appendRows", () => {
@@ -140,6 +159,46 @@ describe("SheetsSink.appendRows", () => {
       { ...row1, id: "100" },
       { ...row2, id: "200" },
     ]);
+  });
+
+  it("lists tabs once per run and does not re-read a header it verified while reading", async () => {
+    const sheet = new InMemorySpreadsheet({ deploys: [["published_at", "repo", "id", "name"]] });
+    const sink = createSheetsSink(sheet, noopLogger);
+
+    await sink.readRows(metric);
+    await sink.appendRows(metric, [row1]);
+    await sink.readRows({ ...metric, name: "other" });
+    await sink.appendRows({ ...metric, name: "other" }, [row1]);
+
+    assert.deepEqual(sheet.calls, [
+      "listTabs",
+      "getValues:deploys:all",
+      "appendValues:deploys:1",
+      `format:100:0:${SHEET_DATE_PATTERN}`,
+      "addTab:other",
+      "appendValues:other:1",
+      "appendValues:other:1",
+      `format:101:0:${SHEET_DATE_PATTERN}`,
+    ]);
+  });
+
+  it("still checks the header before appending when nothing has been read in this run", async () => {
+    const sheet = new InMemorySpreadsheet({ deploys: [["published_at", "repo", "id", "name"]] });
+
+    await createSheetsSink(sheet, noopLogger).appendRows(metric, [row1]);
+
+    assert.ok(sheet.calls.includes("getValues:deploys:1:1"));
+    assert.equal(sheet.tabs.get("deploys")?.rows.length, 2);
+  });
+
+  it("formats a date column even when the first row's date is blank", async () => {
+    const sheet = new InMemorySpreadsheet();
+    const sink = createSheetsSink(sheet, noopLogger);
+
+    await sink.appendRows(metric, [{ ...row1, published_at: null }, row2]);
+
+    assert.ok(sheet.calls.includes(`format:100:0:${SHEET_DATE_PATTERN}`));
+    assert.deepEqual((await sink.readRows(metric)).map((r) => r.published_at), [null, row2.published_at]);
   });
 
   it("writes only the header when the tab exists but is empty, and never rewrites an existing header", async () => {

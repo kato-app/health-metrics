@@ -19,9 +19,9 @@ function findProjectRoot(from: string): string {
 /** Absolute path of the project root, independent of the current working directory. */
 export const projectRoot = findProjectRoot(path.dirname(fileURLToPath(import.meta.url)));
 
-/** Resolve a project-relative path to an absolute one. */
+/** Resolves a path against the project root; an absolute path is returned unchanged. */
 export function fromProjectRoot(...segments: string[]): string {
-  return path.join(projectRoot, ...segments);
+  return path.resolve(projectRoot, ...segments);
 }
 
 export class ConfigError extends Error {
@@ -59,4 +59,15 @@ export function loadConfig(file = fromProjectRoot("config.json")): Config {
 export function loadEnv(file = fromProjectRoot(".env")): Env {
   if (existsSync(file)) process.loadEnvFile(file);
   return parseEnv(process.env);
+}
+
+/**
+ * Absolute path of the service account key file. Checked up front so a typo in
+ * `.env` fails with a clear message instead of an auth error on the first
+ * Sheets request.
+ */
+export function resolveKeyFile(env: Env): string {
+  const file = fromProjectRoot(env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE);
+  if (!existsSync(file)) throw new ConfigError(`GOOGLE_SERVICE_ACCOUNT_KEY_FILE points to ${file}, which does not exist`);
+  return file;
 }

@@ -1,6 +1,5 @@
-import path from "node:path";
 import { Command } from "commander";
-import { ConfigError, fromProjectRoot, loadConfig, loadEnv, projectRoot } from "./config/load.js";
+import { ConfigError, fromProjectRoot, loadConfig, loadEnv, resolveKeyFile } from "./config/load.js";
 import type { Config, Env } from "./config/schema.js";
 import type { Metric } from "./core/metric.js";
 import { runMetrics } from "./core/runner.js";
@@ -49,10 +48,7 @@ function isExpectedError(error: unknown): error is Error {
 }
 
 function createSink(config: Config, env: Env, logger: Logger): MetricSink {
-  const client = createGoogleSheetsClient({
-    spreadsheetId: config.spreadsheetId,
-    keyFile: path.resolve(projectRoot, env.GOOGLE_SERVICE_ACCOUNT_KEY_FILE),
-  });
+  const client = createGoogleSheetsClient({ spreadsheetId: config.spreadsheetId, keyFile: resolveKeyFile(env) });
   return createSheetsSink(client, logger);
 }
 

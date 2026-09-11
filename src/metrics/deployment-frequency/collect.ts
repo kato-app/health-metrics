@@ -1,5 +1,5 @@
 import type { CollectContext, MetricRow } from "../../core/metric.js";
-import { parseSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
+import { MS_PER_DAY, parseSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
 import { repoFullName, type GitHubSource, type RepoRef } from "../../sources/github/source.js";
 import { toRow } from "./transform.js";
 
@@ -13,8 +13,6 @@ import { toRow } from "./transform.js";
  * draft published within the window.
  */
 export const DEFAULT_GRACE_DAYS = 30;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface CollectOptions {
   readonly repos: readonly RepoRef[];
@@ -52,7 +50,7 @@ export async function collectDeploymentFrequency(
       existingRows: existingRows.length,
     });
   }
-  const graceMs = (options.graceDays ?? DEFAULT_GRACE_DAYS) * DAY_MS;
+  const graceMs = (options.graceDays ?? DEFAULT_GRACE_DAYS) * MS_PER_DAY;
   const pagingCutoff = watermark ? new Date(Math.max(startDate.getTime(), watermark.getTime() - graceMs)) : startDate;
   // Sheets may hand ids back as numbers or strings; compare as strings.
   const knownIds = new Set(existingRows.map((row) => String(row.id)));

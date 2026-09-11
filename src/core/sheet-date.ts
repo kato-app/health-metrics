@@ -1,7 +1,8 @@
 /**
- * Date-times are written to the sheet as `YYYY-MM-DD HH:MM:SS` in UTC. Google
- * Sheets parses that format as a native date-time when appended with the
- * USER_ENTERED option, and it sorts correctly as text too.
+ * Metrics exchange date-times with the sink as `YYYY-MM-DD HH:MM:SS` in UTC.
+ * The Sheets sink recognises this shape, stores it as a native date-time
+ * (`toSheetSerial` + `SHEET_DATE_PATTERN`) and reads it back as the same text,
+ * which also sorts chronologically as a plain string.
  */
 const SHEET_DATE = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/;
 
@@ -23,7 +24,7 @@ export function parseSheetDate(value: unknown): Date | undefined {
 /** Number format pattern that displays a serial date-time in the same shape as `formatSheetDate`. */
 export const SHEET_DATE_PATTERN = "yyyy-mm-dd hh:mm:ss";
 
-const MS_PER_DAY = 86_400_000;
+export const MS_PER_DAY = 86_400_000;
 /** Days between the Sheets epoch (1899-12-30) and the Unix epoch. */
 const SHEETS_EPOCH_OFFSET_DAYS = 25_569;
 

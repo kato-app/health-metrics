@@ -34,10 +34,17 @@ export const noopLogger: Logger = {
   },
 };
 
-/** Normalises an unknown thrown value into loggable context. */
+/** Normalises an unknown thrown value into loggable context, following the `cause` chain. */
 export function errorContext(err: unknown): LogContext {
-  if (err instanceof Error) {
-    return { error: { name: err.name, message: err.message, stack: err.stack } };
-  }
-  return { error: { message: String(err) } };
+  return { error: describeError(err) };
+}
+
+function describeError(err: unknown): Record<string, unknown> {
+  if (!(err instanceof Error)) return { message: String(err) };
+  return {
+    name: err.name,
+    message: err.message,
+    stack: err.stack,
+    ...(err.cause !== undefined && { cause: describeError(err.cause) }),
+  };
 }

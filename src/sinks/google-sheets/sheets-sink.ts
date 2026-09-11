@@ -12,9 +12,20 @@ import type { Cell, SpreadsheetClient } from "./spreadsheet-client.js";
  * date or formula. Cells in sheet-date format are the exception: they become
  * native date-time serials, and their columns are given a matching number
  * format after every write, so they read back as the same text.
+ *
+ * A sink instance lives for one CLI run, so it remembers the spreadsheet's tab
+ * list and which headers it has already verified. The runner's read-then-append
+ * sequence therefore costs one `listTabs` for the whole run and no second read
+ * of the header before appending.
  */
 export function createSheetsSink(client: SpreadsheetClient, logger: Logger): MetricSink {
   const log = logger.child({ sink: "google-sheets" });
+  let tabs: Map<string, number> | undefined;
+  const verifiedHeaders = new Set<string>();
+
+  async function loadTabs(): Promise<Map<string, number>> {
+    return (tabs ??= await client.listTabs());
+  }
 
   function assertHeader(metric: Metric, header: readonly string[]): void {
     const expected = metric.columns;
@@ -24,48 +35,53 @@ export function createSheetsSink(client: SpreadsheetClient, logger: Logger): Met
         `Tab "${metric.name}" has columns [${header.join(", ")}] but the metric expects [${expected.join(", ")}]`,
       );
     }
+    verifiedHeaders.add(metric.name);
+  }
+
+  async function writeHeader(metric: Metric): Promise<void> {
+    await client.appendValues(metric.name, [[...metric.columns]]);
+    log.info("Wrote header", { tab: metric.name });
+    verifiedHeaders.add(metric.name);
   }
 
   /** Returns the tab's sheet id, creating the tab and its header row if needed. */
   async function ensureTabWithHeader(metric: Metric): Promise<number> {
-    const tabs = await client.listTabs();
-    let sheetId = tabs.get(metric.name);
+    const known = await loadTabs();
+    let sheetId = known.get(metric.name);
     if (sheetId === undefined) {
       sheetId = await client.addTab(metric.name);
+      known.set(metric.name, sheetId);
       log.info("Created tab", { tab: metric.name });
-    }
-
-    const [header] = await client.getValues(metric.name, "1:1");
-    if (header && header.length > 0) {
-      assertHeader(metric, header);
-    } else {
-      await client.appendValues(metric.name, [[...metric.columns]]);
-      log.info("Wrote header", { tab: metric.name });
+      await writeHeader(metric);
+    } else if (!verifiedHeaders.has(metric.name)) {
+      const [header] = await client.getValues(metric.name, "1:1");
+      if (header?.length) assertHeader(metric, header);
+      else await writeHeader(metric);
     }
     return sheetId;
   }
 
   return {
     async readRows(metric) {
-      const tabs = await client.listTabs();
-      if (!tabs.has(metric.name)) return [];
+      if (!(await loadTabs()).has(metric.name)) return [];
 
       const [header, ...body] = await client.getValues(metric.name);
-      if (!header || header.length === 0) return [];
+      // A tab with nothing in it is fine (first write adds the header); a blank
+      // header row above data is not, since appending would land below the data.
+      if (header === undefined) return [];
       assertHeader(metric, header);
 
       return body.map((cells) => decodeRow(metric, cells));
     },
 
     async appendRows(metric, rows) {
-      const [first] = rows;
-      if (!first) return;
+      if (rows.length === 0) return;
       const sheetId = await ensureTabWithHeader(metric);
       await client.appendValues(metric.name, rows.map((row) => encodeRow(metric, row)));
 
       // Rows inserted by append do not inherit column formatting, so re-apply it
       // to the whole column after every write. Idempotent and one API call.
-      const dateColumns = metric.columns.flatMap((c, i) => (parseSheetDate(first[c]) ? [i] : []));
+      const dateColumns = metric.columns.flatMap((c, i) => (rows.some((row) => parseSheetDate(row[c])) ? [i] : []));
       await client.formatDateTimeColumns(sheetId, dateColumns, SHEET_DATE_PATTERN);
     },
   };
@@ -83,5 +99,5 @@ function encodeRow(metric: Metric, row: MetricRow): Cell[] {
 
 /** Formatted values are always text; an empty cell (or a trimmed trailing one) becomes null. */
 function decodeRow(metric: Metric, cells: readonly string[]): MetricRow {
-  return Object.fromEntries(metric.columns.map((column, i) => [column, cells[i] === undefined || cells[i] === "" ? null : cells[i]]));
+  return Object.fromEntries(metric.columns.map((column, i) => [column, cells[i] || null]));
 }
