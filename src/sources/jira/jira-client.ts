@@ -3,12 +3,13 @@ import type { Logger } from "../../logging/logger.js";
 import {
   changelogHistorySchema,
   issueSchema,
-  parseJiraDate,
+  jiraDate,
   toJiraIssue,
+  type ChangelogHistory,
   type JiraIssue,
   type JiraSource,
   type LinkedPullRequest,
-  type StatusCategory,
+  type RawJiraIssue,
 } from "./source.js";
 
 export interface JiraClientOptions {
@@ -26,16 +27,17 @@ const PAGE_SIZE = 100;
 /** Fields the application reads; requesting only these keeps search responses small. */
 const ISSUE_FIELDS = ["summary", "issuetype", "project", "status", "resolution", "created", "resolutiondate"];
 
+/** `/search/jql` pages by opaque token; the token is absent (or null) on the last page. */
 const searchPageSchema = z.object({
   issues: z.array(issueSchema),
-  nextPageToken: z.string().optional(),
+  nextPageToken: z.string().nullish(),
   isLast: z.boolean().optional(),
 });
 
+/** `/issue/{id}/changelog` pages by offset (`startAt`), oldest history first. */
 const changelogPageSchema = z.object({
   values: z.array(changelogHistorySchema),
   isLast: z.boolean(),
-  nextPageToken: z.string().optional(),
 });
 
 const statusesSchema = z.array(z.object({ id: z.string(), statusCategory: z.object({ key: z.string() }) }));
@@ -49,9 +51,7 @@ const statusesSchema = z.array(z.object({ id: z.string(), statusCategory: z.obje
  */
 const devStatusSummarySchema = z.object({
   summary: z.object({
-    pullrequest: z
-      .object({ byInstanceType: z.record(z.string(), z.object({ count: z.number(), name: z.string().optional() })) })
-      .optional(),
+    pullrequest: z.object({ byInstanceType: z.record(z.string(), z.object({ count: z.number() })) }).optional(),
   }),
 });
 
@@ -62,10 +62,10 @@ const devStatusDetailSchema = z.object({
         .array(
           z.object({
             url: z.string(),
-            name: z.string().nullable().optional(),
+            name: z.string().nullish(),
             status: z.string(),
-            lastUpdate: z.string(),
-            source: z.object({ branch: z.string().nullable().optional() }).optional(),
+            lastUpdate: jiraDate,
+            source: z.object({ branch: z.string().nullish() }).optional(),
           }),
         )
         .default([]),
@@ -73,17 +73,23 @@ const devStatusDetailSchema = z.object({
   ),
 });
 
+const HINTS: Readonly<Record<number, string>> = {
+  401: "Check ATLASSIAN_EMAIL and ATLASSIAN_TOKEN; the token may have expired",
+  403: "The Jira user lacks permission for this resource (Browse Projects on the configured projects)",
+  404: "Check ATLASSIAN_BASE_URL and the configured Jira project keys",
+  410: "This Jira endpoint has been retired; the client needs updating",
+  429: "Jira is rate limiting this user; rerun later",
+};
+
+/** Response bodies can be whole HTML pages; keep only enough to recognise them. */
+function excerpt(body: string): string {
+  return body.length > 300 ? `${body.slice(0, 300)}…` : body;
+}
+
 /** Turns a failed Jira call into an error that says what to check. */
 export function describeJiraError(status: number, path: string, body: string): Error {
-  const hints: Record<number, string> = {
-    401: "Check ATLASSIAN_EMAIL and ATLASSIAN_TOKEN; the token may have expired",
-    403: "The Jira user lacks permission for this resource (Browse Projects on the configured projects)",
-    404: "Check ATLASSIAN_BASE_URL and the configured Jira project keys",
-    410: "This Jira endpoint has been retired; the client needs updating",
-  };
-  const hint = hints[status];
-  const detail = body.length > 300 ? `${body.slice(0, 300)}…` : body;
-  return new Error(`Jira request failed (HTTP ${status}) for ${path}: ${detail}${hint ? `. ${hint}` : ""}`);
+  const hint = HINTS[status];
+  return new Error(`Jira request failed (HTTP ${status}) for ${path}: ${excerpt(body)}${hint ? `. ${hint}` : ""}`);
 }
 
 /** `JiraSource` for Jira Cloud using basic auth with an API token. */
@@ -101,35 +107,40 @@ export function createJiraClient(options: JiraClientOptions): JiraSource {
     const text = await response.text();
     if (!response.ok) throw describeJiraError(response.status, path, text);
 
-    const parsed = schema.safeParse(JSON.parse(text));
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      // Typically a proxy or SSO page that answered 200 instead of Jira.
+      throw new Error(`Jira returned a non-JSON response for ${path}: ${excerpt(text)}`);
+    }
+    const parsed = schema.safeParse(json);
     if (!parsed.success) {
       throw new Error(`Unexpected Jira payload from ${path}: ${parsed.error.message}`, { cause: parsed.error });
     }
     return parsed.data;
   }
 
-  /** Search returns at most 100 changelog entries per issue; fetch the rest for the few issues that have more. */
-  async function completeChangelog(issue: z.infer<typeof issueSchema>): Promise<z.infer<typeof changelogHistorySchema>[]> {
+  /** Search embeds at most 100 changelog entries per issue; re-read the whole changelog for the few issues that have more. */
+  async function completeChangelog(issue: RawJiraIssue): Promise<ChangelogHistory[]> {
     const embedded = issue.changelog?.histories ?? [];
     if (!issue.changelog || issue.changelog.total <= embedded.length) return embedded;
 
     logger.debug("Fetching full changelog", { issue: issue.key, total: issue.changelog.total });
-    const histories: z.infer<typeof changelogHistorySchema>[] = [];
-    let nextPageToken: string | undefined;
-    do {
-      const page = await get(`/rest/api/3/issue/${issue.id}/changelog`, { maxResults: String(PAGE_SIZE), nextPageToken }, changelogPageSchema);
+    const path = `/rest/api/3/issue/${issue.id}/changelog`;
+    const histories: ChangelogHistory[] = [];
+    for (;;) {
+      const page = await get(path, { startAt: String(histories.length), maxResults: String(PAGE_SIZE) }, changelogPageSchema);
       histories.push(...page.values);
-      nextPageToken = page.isLast ? undefined : page.nextPageToken;
-    } while (nextPageToken);
-    return histories;
+      if (page.isLast) return histories;
+      if (page.values.length === 0) throw new Error(`Jira reported more changelog entries for ${issue.key} but returned none at startAt=${histories.length}`);
+    }
   }
 
   return {
     async *searchIssues(jql: string): AsyncIterable<JiraIssue> {
       let nextPageToken: string | undefined;
-      let page = 0;
-      do {
-        page += 1;
+      for (let page = 1; ; page += 1) {
         const result = await get(
           "/rest/api/3/search/jql",
           { jql, fields: ISSUE_FIELDS.join(","), expand: "changelog", maxResults: String(PAGE_SIZE), nextPageToken },
@@ -137,13 +148,18 @@ export function createJiraClient(options: JiraClientOptions): JiraSource {
         );
         logger.debug("Fetched issues page", { page, count: result.issues.length });
         for (const raw of result.issues) yield toJiraIssue(raw, await completeChangelog(raw));
-        nextPageToken = result.isLast === true ? undefined : result.nextPageToken;
-      } while (nextPageToken);
+
+        if (result.isLast === false && !result.nextPageToken) {
+          throw new Error(`Jira reported more issues but returned no nextPageToken (page ${page})`);
+        }
+        if (result.isLast || !result.nextPageToken) return;
+        nextPageToken = result.nextPageToken;
+      }
     },
 
     async listStatusCategories() {
       const statuses = await get("/rest/api/3/status", {}, statusesSchema);
-      return new Map(statuses.map((s) => [s.id, s.statusCategory.key as StatusCategory | string]));
+      return new Map(statuses.map((s) => [s.id, s.statusCategory.key]));
     },
 
     async listLinkedPullRequests(issueId: string): Promise<LinkedPullRequest[]> {
@@ -159,16 +175,14 @@ export function createJiraClient(options: JiraClientOptions): JiraSource {
           { issueId, applicationType, dataType: "pullrequest" },
           devStatusDetailSchema,
         );
-        for (const d of result.detail) {
-          for (const pr of d.pullRequests) {
-            linked.push({
-              url: pr.url,
-              title: pr.name ?? null,
-              status: pr.status,
-              sourceBranch: pr.source?.branch ?? null,
-              lastUpdate: parseJiraDate(pr.lastUpdate),
-            });
-          }
+        for (const pr of result.detail.flatMap((d) => d.pullRequests)) {
+          linked.push({
+            url: pr.url,
+            title: pr.name ?? null,
+            status: pr.status,
+            sourceBranch: pr.source?.branch ?? null,
+            lastUpdate: pr.lastUpdate,
+          });
         }
       }
       return linked;

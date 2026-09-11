@@ -15,7 +15,7 @@ cp .env.example .env   # then fill in the values
 
 | Variable | Purpose |
 | --- | --- |
-| `GITHUB_TOKEN` | Personal access token with read access to the organisation in `github.owner` and its repositories. |
+| `GITHUB_TOKEN` | Fine-grained personal access token for the organisation in `github.owner` with repository permissions Metadata, Contents and Pull requests (all read). |
 | `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` | Path to a Google service account key JSON. Share the spreadsheet with the service account's email as an Editor. |
 | `ATLASSIAN_BASE_URL` | Jira Cloud site, e.g. `https://your-site.atlassian.net`. |
 | `ATLASSIAN_EMAIL` | Email of the Atlassian user the API token belongs to. |
@@ -29,7 +29,7 @@ cp .env.example .env   # then fill in the values
 | `startDate` | Earliest date (UTC, inclusive) backfilled when a metric's tab is empty. |
 | `github.owner` | GitHub **organisation** whose repositories are discovered (see [Repository discovery](#repository-discovery)). A user account will not work. |
 | `github.excludeRepos` | Repository names (without the owner) to leave out of every metric even though they have releases. Optional; defaults to `[]`. |
-| `jira.projects` | Jira projects to collect issues from, each as `{ "key": "GR", "team": "Kato Growth" }`. Only these projects are queried; the team name is written to the sheet alongside the project key. |
+| `jira.projects` | Jira projects to collect issues from, each as `{ "key": "GR", "team": "Kato Growth" }`. Only these projects are queried; metrics that read Jira write the team name to the sheet alongside the project key. |
 | `logging.file` | Project-relative path of the JSON log file, appended to on every run. |
 
 ## CLI
@@ -152,6 +152,6 @@ src/
   logging/          Logger interface and the pino-backed implementation
   metrics/          metric registry and one folder per metric
   sinks/            MetricSink implementations (Google Sheets)
-  sources/          typed clients for source systems (GitHub)
+  sources/          typed clients for source systems (GitHub, Jira)
 tests/              unit tests, mirroring src/
 ```

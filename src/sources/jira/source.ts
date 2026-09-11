@@ -3,7 +3,8 @@ import { z } from "zod";
 /**
  * Jira's three status categories. Every workflow status belongs to exactly one,
  * which is what lets "started" and "done" mean the same thing across projects
- * with different status names.
+ * with different status names. Typed as an open string because a site can also
+ * report the built-in "undefined" (No Category) key.
  */
 export type StatusCategory = "new" | "indeterminate" | "done";
 
@@ -14,20 +15,23 @@ export function parseJiraDate(value: string): Date {
   return date;
 }
 
-const jiraDate = z.string().transform(parseJiraDate);
+/** A Jira timestamp field, parsed to a Date at the boundary. */
+export const jiraDate = z.string().transform(parseJiraDate);
 
 const changelogItemSchema = z.object({
   field: z.string(),
-  from: z.string().nullable().optional(),
-  to: z.string().nullable().optional(),
-  fromString: z.string().nullable().optional(),
-  toString: z.string().nullable().optional(),
+  from: z.string().nullish(),
+  to: z.string().nullish(),
+  fromString: z.string().nullish(),
+  toString: z.string().nullish(),
 });
 
 export const changelogHistorySchema = z.object({
   created: jiraDate,
   items: z.array(changelogItemSchema),
 });
+
+export type ChangelogHistory = z.infer<typeof changelogHistorySchema>;
 
 /** The subset of a Jira issue the application relies on, as returned by search or issue endpoints. */
 export const issueSchema = z.object({
@@ -42,6 +46,7 @@ export const issueSchema = z.object({
     created: jiraDate,
     resolutiondate: jiraDate.nullable(),
   }),
+  /** Present when the request expanded `changelog`. `total` may exceed `histories.length` (search embeds at most 100). */
   changelog: z
     .object({
       total: z.number().int(),
@@ -49,6 +54,8 @@ export const issueSchema = z.object({
     })
     .optional(),
 });
+
+export type RawJiraIssue = z.infer<typeof issueSchema>;
 
 /** One status change, oldest first when listed. `toStatusId` is looked up in the status map for its category. */
 export interface StatusTransition {
@@ -76,10 +83,9 @@ export interface JiraIssue {
 }
 
 /** Converts a raw issue plus its complete changelog histories into the domain shape. */
-export function toJiraIssue(
-  raw: z.infer<typeof issueSchema>,
-  histories: readonly z.infer<typeof changelogHistorySchema>[],
-): JiraIssue {
+export function toJiraIssue(raw: RawJiraIssue, histories: readonly ChangelogHistory[]): JiraIssue {
+  // Jira already lists histories oldest first; the sort is insurance. It is stable, so
+  // transitions recorded at the same instant keep Jira's order.
   const statusTransitions = histories
     .flatMap((history) =>
       history.items

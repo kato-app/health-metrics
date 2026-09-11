@@ -8,7 +8,7 @@ const BASE = "https://example.atlassian.net";
 
 type Route = (url: URL) => { status?: number; body: unknown };
 
-/** Fake fetch that dispatches on pathname and records every request. */
+/** Fake fetch that dispatches on pathname and records every request. String bodies are sent verbatim. */
 function fakeFetch(routes: Record<string, Route>) {
   const requests: URL[] = [];
   const impl = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -62,12 +62,11 @@ describe("JiraClient.searchIssues", () => {
     const { fetch, jira } = client({
       "/rest/api/3/search/jql": (url) =>
         url.searchParams.get("nextPageToken") === "p2"
-          ? { body: { issues: [rawIssue("GR-2", [done, started])], isLast: true } }
+          ? { body: { issues: [rawIssue("GR-2", [done, started])], isLast: true, nextPageToken: null } }
           : { body: { issues: [rawIssue("GR-1", [done, assigned, started])], nextPageToken: "p2", isLast: false } },
     });
 
-    const issues = [];
-    for await (const issue of jira.searchIssues("project = GR")) issues.push(issue);
+    const issues = await Array.fromAsync(jira.searchIssues("project = GR"));
 
     assert.deepEqual(issues.map((i) => i.key), ["GR-1", "GR-2"]);
     const first = issues[0]!;
@@ -95,19 +94,33 @@ describe("JiraClient.searchIssues", () => {
     assert.equal(fetch.requests.length, 2);
   });
 
-  it("fetches the full changelog when search truncated it", async () => {
+  it("fetches the full changelog by offset when search truncated it", async () => {
     const { fetch, jira } = client({
       "/rest/api/3/search/jql": () => ({ body: { issues: [rawIssue("GR-7", [done], 3)], isLast: true } }),
       "/rest/api/3/issue/7/changelog": (url) =>
-        url.searchParams.get("nextPageToken") === "c2"
-          ? { body: { values: [done], isLast: true } }
-          : { body: { values: [assigned, started], isLast: false, nextPageToken: "c2" } },
+        url.searchParams.get("startAt") === "2"
+          ? { body: { values: [done], isLast: true, startAt: 2, total: 3 } }
+          : { body: { values: [assigned, started], isLast: false, startAt: 0, total: 3 } },
     });
 
     const [issue] = await Array.fromAsync(jira.searchIssues("key = GR-7"));
 
     assert.equal(issue?.statusTransitions.length, 2);
-    assert.equal(fetch.requests.filter((u) => u.pathname.endsWith("/changelog")).length, 2);
+    const changelogRequests = fetch.requests.filter((u) => u.pathname.endsWith("/changelog"));
+    assert.deepEqual(changelogRequests.map((u) => u.searchParams.get("startAt")), ["0", "2"]);
+  });
+
+  it("refuses to loop on a changelog page that claims more entries but returns none", async () => {
+    const { jira } = client({
+      "/rest/api/3/search/jql": () => ({ body: { issues: [rawIssue("GR-7", [done], 3)], isLast: true } }),
+      "/rest/api/3/issue/7/changelog": () => ({ body: { values: [], isLast: false } }),
+    });
+    await assert.rejects(Array.fromAsync(jira.searchIssues("x")), /GR-7.*returned none/);
+  });
+
+  it("fails rather than silently stopping when a page says it is not last but has no token", async () => {
+    const { jira } = client({ "/rest/api/3/search/jql": () => ({ body: { issues: [], isLast: false } }) });
+    await assert.rejects(Array.fromAsync(jira.searchIssues("x")), /no nextPageToken/);
   });
 
   it("surfaces HTTP failures with a hint and the path", async () => {
@@ -118,6 +131,11 @@ describe("JiraClient.searchIssues", () => {
   it("fails on an unexpected payload rather than yielding partial issues", async () => {
     const { jira } = client({ "/rest/api/3/search/jql": () => ({ body: { issues: [{ key: "GR-1" }] } }) });
     await assert.rejects(Array.fromAsync(jira.searchIssues("x")), /Unexpected Jira payload/);
+  });
+
+  it("names the path when a 200 response is not JSON, e.g. an SSO page", async () => {
+    const { jira } = client({ "/rest/api/3/search/jql": () => ({ body: "<html>Sign in</html>" }) });
+    await assert.rejects(Array.fromAsync(jira.searchIssues("x")), /non-JSON.*search\/jql.*<html>/);
   });
 });
 
@@ -145,13 +163,13 @@ describe("JiraClient.listLinkedPullRequests", () => {
   it("asks the summary which integration holds the PRs, then flattens that instance's detail", async () => {
     const { fetch, jira } = client({
       "/rest/dev-status/latest/issue/summary": () => ({ body: summaryWith({ [INSTANCE]: { count: 2, name: "GitHub" } }) }),
-      "/rest/dev-status/latest/issue/detail": (url) => ({
+      "/rest/dev-status/latest/issue/detail": () => ({
         body: {
           detail: [
             {
               pullRequests: [
                 { id: "#4193", name: "CW-394: Disposals", url: "https://github.com/kato-app/kato/pull/4193", status: "MERGED", lastUpdate: "2026-09-09T15:40:00.000+0000", source: { branch: "cw-394-disposals" } },
-                { id: "#12", url: "https://github.com/kato-app/kato-settings/pull/12", status: "OPEN", lastUpdate: "2026-09-10T08:00:00.000+0000" },
+                { id: "#12", name: null, url: "https://github.com/kato-app/kato-settings/pull/12", status: "OPEN", lastUpdate: "2026-09-10T08:00:00.000+0000", source: { branch: null } },
               ],
             },
           ],
@@ -173,9 +191,9 @@ describe("JiraClient.listLinkedPullRequests", () => {
     assert.equal(fetch.requests.length, 2);
   });
 
-  it("makes no detail call and returns an empty list when the issue has no linked pull requests", async () => {
+  it("skips instances with a zero count and makes no detail call when nothing is linked", async () => {
     const { fetch, jira } = client({
-      "/rest/dev-status/latest/issue/summary": () => ({ body: summaryWith({}) }),
+      "/rest/dev-status/latest/issue/summary": () => ({ body: summaryWith({ [INSTANCE]: { count: 0 } }) }),
       "/rest/dev-status/latest/issue/detail": () => ({ status: 500, body: "should not be called" }),
     });
     assert.deepEqual(await jira.listLinkedPullRequests("1"), []);

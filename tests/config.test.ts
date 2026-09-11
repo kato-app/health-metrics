@@ -4,14 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import { ConfigError, fromProjectRoot, loadConfig, parseConfig, parseEnv, resolveKeyFile } from "../src/config/load.js";
-
-const valid = {
-  spreadsheetId: "sheet",
-  startDate: "2026-01-01",
-  github: { owner: "kato-app", excludeRepos: [] },
-  jira: { projects: [{ key: "GR", team: "Kato Growth" }] },
-  logging: { file: "logs/app.log" },
-};
+import { validConfig as valid } from "./helpers/fakes.js";
 
 describe("parseConfig", () => {
   it("accepts a valid config", () => {
@@ -84,8 +77,10 @@ describe("parseEnv", () => {
     assert.deepEqual(parseEnv({ ...complete, PATH: "/bin" }), complete);
   });
 
-  it("rejects a malformed Jira site URL or email", () => {
-    assert.throws(() => parseEnv({ ...complete, ATLASSIAN_BASE_URL: "example.atlassian.net" }), ConfigError);
+  it("rejects a malformed or non-https Jira site URL and a malformed email", () => {
+    for (const ATLASSIAN_BASE_URL of ["example.atlassian.net", "http://example.atlassian.net"]) {
+      assert.throws(() => parseEnv({ ...complete, ATLASSIAN_BASE_URL }), ConfigError, ATLASSIAN_BASE_URL);
+    }
     assert.throws(() => parseEnv({ ...complete, ATLASSIAN_EMAIL: "not-an-email" }), ConfigError);
   });
 });

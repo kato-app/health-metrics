@@ -38,8 +38,8 @@ export type JiraProject = Config["jira"]["projects"][number];
 export const envSchema = z.object({
   GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required"),
   GOOGLE_SERVICE_ACCOUNT_KEY_FILE: z.string().min(1, "GOOGLE_SERVICE_ACCOUNT_KEY_FILE is required"),
-  /** Jira Cloud site, e.g. https://example.atlassian.net */
-  ATLASSIAN_BASE_URL: z.url({ protocol: /^https?$/ }),
+  /** Jira Cloud site, e.g. https://example.atlassian.net. https only: the token travels as basic auth. */
+  ATLASSIAN_BASE_URL: z.url({ protocol: /^https$/ }),
   ATLASSIAN_EMAIL: z.email(),
   ATLASSIAN_TOKEN: z.string().min(1, "ATLASSIAN_TOKEN is required"),
 });

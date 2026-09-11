@@ -1,6 +1,16 @@
+import type { Config } from "../../src/config/schema.js";
 import type { CollectContext, Metric, MetricRow } from "../../src/core/metric.js";
 import type { MetricSink } from "../../src/core/sink.js";
 import type { GitHubRelease, GitHubSource, RepoRef } from "../../src/sources/github/source.js";
+
+/** A complete, valid `config.json`; spread and override the part a test cares about. */
+export const validConfig: Config = {
+  spreadsheetId: "sheet",
+  startDate: "2026-01-01",
+  github: { owner: "kato-app", excludeRepos: [] },
+  jira: { projects: [{ key: "GR", team: "Kato Growth" }] },
+  logging: { file: "logs/app.log" },
+};
 
 /** Builds a realistic published release; override whatever the test cares about. */
 export function release(overrides: Partial<GitHubRelease> & { id: number }): GitHubRelease {

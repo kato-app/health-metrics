@@ -7,7 +7,7 @@ import { collectDeploymentFrequency, findWatermark } from "../src/metrics/deploy
 import { deploymentFrequency } from "../src/metrics/deployment-frequency/index.js";
 import { COLUMNS, toRow } from "../src/metrics/deployment-frequency/transform.js";
 import { releaseSchema } from "../src/sources/github/source.js";
-import { FakeGitHubSource, release } from "./helpers/fakes.js";
+import { FakeGitHubSource, release, validConfig } from "./helpers/fakes.js";
 
 const kato = { owner: "kato-app", name: "kato" };
 const settings = { owner: "kato-app", name: "kato-settings" };
@@ -201,13 +201,6 @@ describe("collectDeploymentFrequency", () => {
 
 describe("deploymentFrequency factory", () => {
   it("asks the registry for repositories when collecting, not when constructed, so `list` stays offline", async () => {
-    const config = {
-      spreadsheetId: "sheet",
-      startDate: "2026-01-01",
-      github: { owner: "kato-app", excludeRepos: [] },
-      jira: { projects: [{ key: "GR", team: "Kato Growth" }] },
-      logging: { file: "logs/app.log" },
-    };
     let asked = 0;
     const repos = {
       list: async () => {
@@ -217,7 +210,7 @@ describe("deploymentFrequency factory", () => {
     };
     const github = new FakeGitHubSource({ kato: [release({ id: 1 })], "kato-settings": [release({ id: 2 })] });
 
-    const metric = deploymentFrequency({ config, logger: noopLogger, github, repos });
+    const metric = deploymentFrequency({ config: validConfig, logger: noopLogger, github, repos });
     assert.equal(asked, 0);
 
     const rows = await metric.collect(ctx());
