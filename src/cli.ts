@@ -13,14 +13,10 @@ import { createOctokitSource } from "./sources/github/octokit-source.js";
 import type { GitHubSource } from "./sources/github/source.js";
 
 /** For commands that only describe metrics and must never reach the network. */
-const offlineGitHub: GitHubSource = {
-  listReleases() {
-    throw new Error("GitHub is not available in this command");
-  },
-  listReposWithReleases() {
-    throw new Error("GitHub is not available in this command");
-  },
-};
+function offline(): never {
+  throw new Error("GitHub is not available in this command");
+}
+const offlineGitHub: GitHubSource = { listReleases: offline, listReposWithReleases: offline };
 
 interface RunCommandOptions {
   all?: boolean;

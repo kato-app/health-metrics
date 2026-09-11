@@ -10,30 +10,31 @@ import {
 
 type Node = { name: string; releases: { totalCount: number } } | null;
 
-function page(nodes: Node[], endCursor: string | null): RepositoriesPage {
-  return {
-    organization: {
-      repositories: { pageInfo: { hasNextPage: endCursor !== null, endCursor }, nodes },
-    },
-  };
+/**
+ * A page that leads on to `next`, or the last page when `next` is null. Like
+ * GitHub, the last page still carries an endCursor (one no fake page answers
+ * to), so a loop that keyed off the cursor instead of hasNextPage would fail.
+ */
+function page(nodes: Node[], next: string | null): RepositoriesPage {
+  const pageInfo = { hasNextPage: next !== null, endCursor: next ?? "cursor-of-last-page" };
+  return { organization: { repositories: { pageInfo, nodes } } };
 }
 
 function repo(name: string, totalCount: number): Node {
   return { name, releases: { totalCount } };
 }
 
-/** Serves pre-built pages keyed by the cursor they are requested with, recording every call. */
-function fakeGraphql(pages: Record<string, unknown>): GraphqlExecutor & { calls: Record<string, unknown>[] } {
+/** Serves pre-built pages keyed by the cursor they are requested with ("first" for null), recording every call. */
+function fakeGraphql(pages: Record<string, unknown>) {
   const calls: Record<string, unknown>[] = [];
-  const execute = (async (query: string, variables: Record<string, unknown>) => {
+  const execute: GraphqlExecutor = async (query, variables) => {
     calls.push(variables);
     assert.equal(query, REPOS_WITH_RELEASES_QUERY);
     const key = variables.cursor === null ? "first" : String(variables.cursor);
     if (!(key in pages)) throw new Error(`Unexpected cursor ${key}`);
     return pages[key];
-  }) as GraphqlExecutor & { calls: Record<string, unknown>[] };
-  execute.calls = calls;
-  return execute;
+  };
+  return Object.assign(execute, { calls });
 }
 
 describe("discoverReposWithReleases", () => {
@@ -56,6 +57,14 @@ describe("discoverReposWithReleases", () => {
 
   it("handles a single page and an organisation with no qualifying repos", async () => {
     const graphql = fakeGraphql({ first: page([repo("empty", 0)], null) });
+    assert.deepEqual(await discoverReposWithReleases(graphql, "kato-app", noopLogger), []);
+    assert.equal(graphql.calls.length, 1);
+  });
+
+  it("handles an organisation with no repositories at all, where GitHub sends no cursor", async () => {
+    const graphql = fakeGraphql({
+      first: { organization: { repositories: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] } } },
+    });
     assert.deepEqual(await discoverReposWithReleases(graphql, "kato-app", noopLogger), []);
     assert.equal(graphql.calls.length, 1);
   });

@@ -20,12 +20,15 @@ query($org: String!, $cursor: String) {
   }
 }`;
 
+/** A node is null when the token cannot see that repository; `organization` is null when it cannot see the org. */
+const repositoryNodeSchema = z.object({ name: z.string(), releases: z.object({ totalCount: z.number().int() }) });
+
 export const repositoriesPageSchema = z.object({
   organization: z
     .object({
       repositories: z.object({
         pageInfo: z.object({ hasNextPage: z.boolean(), endCursor: z.string().nullable() }),
-        nodes: z.array(z.object({ name: z.string(), releases: z.object({ totalCount: z.number().int() }) }).nullable()),
+        nodes: z.array(repositoryNodeSchema.nullable()),
       }),
     })
     .nullable(),
@@ -44,11 +47,9 @@ export type GraphqlExecutor = (query: string, variables: Record<string, unknown>
 export async function discoverReposWithReleases(execute: GraphqlExecutor, org: string, logger: Logger): Promise<string[]> {
   const names: string[] = [];
   let cursor: string | null = null;
-  let page = 0;
   let scanned = 0;
 
-  do {
-    page += 1;
+  for (let page = 1; ; page += 1) {
     const raw = await execute(REPOS_WITH_RELEASES_QUERY, { org, cursor });
     const parsed = repositoriesPageSchema.safeParse(raw);
     if (!parsed.success) {
@@ -66,12 +67,14 @@ export async function discoverReposWithReleases(execute: GraphqlExecutor, org: s
     }
     logger.debug("Fetched repositories page", { org, page, repos: nodes.length, withReleases: names.length });
 
-    if (pageInfo.hasNextPage && pageInfo.endCursor === null) {
+    // GitHub sets endCursor on the last page too, so hasNextPage alone decides whether to continue.
+    if (!pageInfo.hasNextPage) {
+      logger.info("Discovered repositories with releases", { org, scanned, withReleases: names.length, pages: page });
+      return names;
+    }
+    if (pageInfo.endCursor === null) {
       throw new Error(`GraphQL reported more repositories for ${org} but returned no cursor (page ${page})`);
     }
-    cursor = pageInfo.hasNextPage ? pageInfo.endCursor : null;
-  } while (cursor !== null);
-
-  logger.info("Discovered repositories with releases", { org, scanned, withReleases: names.length, pages: page });
-  return names;
+    cursor = pageInfo.endCursor;
+  }
 }
