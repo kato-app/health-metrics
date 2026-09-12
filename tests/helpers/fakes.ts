@@ -45,7 +45,6 @@ export function release(overrides: Partial<GitHubRelease> & { id: number }): Git
 export class FakeGitHubSource implements GitHubSource {
   readonly yielded = new Map<string, number>();
   discoveryCalls = 0;
-  pullRequestCalls = 0;
 
   constructor(
     private readonly releasesByRepo: Record<string, GitHubRelease[]>,
@@ -54,7 +53,6 @@ export class FakeGitHubSource implements GitHubSource {
   ) {}
 
   async getPullRequest(ref: PullRequestRef): Promise<GitHubPullRequest> {
-    this.pullRequestCalls += 1;
     const pr = this.pullRequests[pullRequestKey(ref)];
     if (!pr) throw new Error(`Not Found: ${pullRequestKey(ref)}`);
     return pr;

@@ -10,13 +10,9 @@
  */
 export function extractIssueKeys(text: string, projectKeys: readonly string[]): string[] {
   if (projectKeys.length === 0) return [];
-  const projects = projectKeys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-  const pattern = new RegExp(`\\b(${projects})[-_ ]?(\\d{1,7})\\b`, "gi");
-
-  const keys: string[] = [];
-  for (const [, project, number] of text.matchAll(pattern)) {
-    const key = `${project!.toUpperCase()}-${number}`;
-    if (!keys.includes(key)) keys.push(key);
-  }
-  return keys;
+  // Keys come from config.json, so escape rather than trust them to be plain letters.
+  const projects = projectKeys.map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const pattern = new RegExp(String.raw`\b(${projects})[-_ ]?(\d{1,7})\b`, "gi");
+  const keys = Array.from(text.matchAll(pattern), ([, project, number]) => `${project!.toUpperCase()}-${number}`);
+  return [...new Set(keys)];
 }

@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import type { Logger } from "../../logging/logger.js";
 import {
@@ -30,9 +31,10 @@ const PAGE_SIZE = 100;
 const MAX_RATE_LIMIT_RETRIES = 3;
 const MAX_RETRY_WAIT_MS = 60_000;
 
+/** Honours a numeric Retry-After (seconds); otherwise backs off 1s, 2s, 4s. Never waits longer than the cap. */
 function retryDelayMs(response: Response, attempt: number): number {
-  const header = Number(response.headers.get("retry-after"));
-  const seconds = Number.isFinite(header) && header > 0 ? header : 2 ** attempt;
+  const retryAfter = Number(response.headers.get("retry-after")); // 0 when absent, NaN for an HTTP-date
+  const seconds = retryAfter > 0 ? retryAfter : 2 ** attempt;
   return Math.min(seconds * 1000, MAX_RETRY_WAIT_MS);
 }
 
@@ -90,7 +92,7 @@ const HINTS: Readonly<Record<number, string>> = {
   403: "The Jira user lacks permission for this resource (Browse Projects on the configured projects)",
   404: "Check ATLASSIAN_BASE_URL and the configured Jira project keys",
   410: "This Jira endpoint has been retired; the client needs updating",
-  429: "Jira is rate limiting this user; rerun later",
+  429: "Jira is still rate limiting this user after retries; rerun later",
 };
 
 /** Response bodies can be whole HTML pages; keep only enough to recognise them. */
@@ -108,7 +110,7 @@ export function describeJiraError(status: number, path: string, body: string): E
 export function createJiraClient(options: JiraClientOptions): JiraSource {
   const logger = options.logger.child({ source: "jira" });
   const fetchImpl = options.fetch ?? fetch;
-  const sleep = options.sleep ?? ((ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = options.sleep ?? ((ms) => delay(ms));
   const baseUrl = options.baseUrl.replace(/\/+$/, "");
   const authorization = `Basic ${Buffer.from(`${options.email}:${options.token}`).toString("base64")}`;
 

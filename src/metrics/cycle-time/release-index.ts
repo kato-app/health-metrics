@@ -28,6 +28,10 @@ export interface ReleaseIndex {
  * pull request mentioned in the release notes to the release that shipped it.
  * Drafts and prereleases are ignored, matching the deployment-frequency rules.
  * A pull request listed by more than one release is attributed to the earliest.
+ *
+ * Paging stops at the first release created before `since`. As with
+ * deployment-frequency, a release cut from an older commit but published after
+ * `since` is therefore not indexed; pass an earlier `since` to widen the window.
  */
 export async function buildReleaseIndex(
   github: GitHubSource,
