@@ -137,6 +137,15 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
     const delivered = await deliver(issue);
     if (!delivered) continue;
     if (!delivered.startedAt) withoutStart += 1;
+    if (delivered.startedAt && delivered.startedAt > delivered.releasedAt) {
+      // The code shipped before the ticket was started: usually a ticket raised after the fact,
+      // or a pull request linked to the wrong issue. Kept in the sheet, but worth a look.
+      logger.warn("Issue was released before it was started; check the ticket and its linked pull requests", {
+        issue: issue.key,
+        startedAt: delivered.startedAt.toISOString(),
+        releasedAt: delivered.releasedAt.toISOString(),
+      });
+    }
     rows.push(toRow(delivered));
     knownKeys.add(issue.key);
   }

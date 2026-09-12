@@ -178,7 +178,7 @@ One row per Jira issue that has been **delivered to production**, for the projec
 - has a merged pull request that no published release lists yet (deferred until the release is cut);
 - was released before `startDate`.
 
-Each run logs a count per reason at `info` and the individual decisions at `debug`.
+Each run logs a count per reason at `info` and the individual decisions at `debug`. A row whose release predates its `started_at` (negative `cycle_time_days`, usually a ticket raised after the work or a pull request linked to the wrong issue) is still written but logged at `warn` with the issue key.
 
 **Delta collection.** The watermark is the newest `released_at` in the tab. Each run queries Jira for issues resolved on or after the watermark **minus 90 days** (never earlier than `startDate`), skips keys already in the sheet before any further lookups, and evaluates the rest. The long window exists because an issue can be Done in Jira weeks before its pull request ships; deferred issues are re-evaluated on every run until they qualify. Rows are appended oldest release first, then by issue key.
 

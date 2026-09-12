@@ -274,3 +274,22 @@ describe("cycleTime factory", () => {
     assert.deepEqual(rows.map((r) => [r.issue_key, r.team]), [["GR-1", "Kato Growth"]]);
   });
 });
+
+describe("collectCycleTime data-quality warnings", () => {
+  it("warns, but still writes, when an issue's release predates its first In Progress", async () => {
+    const logger = warnRecorder();
+    const startedAfterRelease = jiraIssue({
+      key: "GR-1",
+      statusTransitions: [transition("inProgress", "2026-02-20T10:00:00Z", "toDo"), transition("done", "2026-02-21T10:00:00Z", "inProgress")],
+    });
+    const jira = new FakeJiraSource([startedAfterRelease], { "1": [linkedPullRequest(prUrl("kato", 10))] });
+
+    const rows = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], logger });
+
+    assert.equal(rows[0]?.cycle_time_days, -9);
+    assert.deepEqual(
+      logger.lines.filter((l) => l.message.startsWith("Issue was released before")).map((l) => l.context?.issue),
+      ["GR-1"],
+    );
+  });
+});
