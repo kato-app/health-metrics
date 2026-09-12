@@ -4,8 +4,13 @@ import { pullRequestKey } from "../../sources/github/source.js";
 import { extractIssueKeys } from "./issue-keys.js";
 import type { ShippedPullRequest } from "./release-index.js";
 
-/** Anything shaped like an issue key from a project we do not collect, e.g. `Awa 10288`. Two digits or more to avoid "Phase 2". */
-const OTHER_PROJECT_KEY = /\b([A-Z][A-Za-z]{1,9})[-_ ]?\d{2,7}\b/;
+/**
+ * An issue key from a project we do not collect: strict (`AWA-10290`) anywhere
+ * in the title, or branch-derived (`Awa 10288 kf availability`) only at the
+ * start and with two digits or more, so that "Upgrade to Node 22" and
+ * "Phase 2 rollout" are reported as unlinked rather than counted as projects.
+ */
+const OTHER_PROJECT_KEY = /\b([A-Z][A-Z0-9]{1,9})-\d{1,7}\b|^([A-Z][A-Za-z]{1,9})[-_ ]?\d{2,7}\b/;
 
 export interface UnlinkedReport {
   /** Shipped pull requests with no recognisable issue key at all. Fix these at the source. */
@@ -35,7 +40,8 @@ export function reportUnlinkedPullRequests(
     if (isHousekeepingPullRequest(pr.title)) continue;
     if (extractIssueKeys(pr.title, projectKeys).length > 0) continue;
 
-    const other = OTHER_PROJECT_KEY.exec(pr.title)?.[1]?.toUpperCase();
+    const match = OTHER_PROJECT_KEY.exec(pr.title);
+    const other = (match?.[1] ?? match?.[2])?.toUpperCase();
     if (other) otherProjects[other] = (otherProjects[other] ?? 0) + 1;
     else unlinked.push(pr);
   }

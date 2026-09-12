@@ -142,6 +142,7 @@ describe("collectCycleTime", () => {
       jiraIssue({ key: "GR-107" }), // declined PR ignored, merged PR counts
       jiraIssue({ key: "GR-108" }), // PR in a repo we do not collect
       jiraIssue({ key: "GR-109" }), // released before startDate
+      jiraIssue({ key: "GR-110" }), // only an open PR: deferred, not a spike
     ];
     const jira = new FakeJiraSource(issues, {
       "103": [linkedPullRequest(prUrl("kato", 10))],
@@ -150,6 +151,7 @@ describe("collectCycleTime", () => {
       "107": [linkedPullRequest(prUrl("kato", 10)), linkedPullRequest(prUrl("kato", 13), "DECLINED")],
       "108": [linkedPullRequest("https://github.com/kato-app/other-repo/pull/1")],
       "109": [linkedPullRequest(prUrl("kato", 9))],
+      "110": [linkedPullRequest(prUrl("kato", 12), "OPEN")],
     });
 
     const rows = await collectCycleTime({ jira, github: github() }, options, ctx([{ issue_key: "GR-103", released_at: "2026-02-11 10:00:00" }]));
@@ -172,11 +174,21 @@ describe("collectCycleTime", () => {
     assert.match(jira.queries[2]!, /resolved >= "2026-01-01"/);
   });
 
-  it("emits a row without a start when the issue never entered a started status, and maps unknown projects to their key", async () => {
+  it("warns and queries from the start date when no existing row has a readable released_at", async () => {
+    const jira = new FakeJiraSource([]);
+    const logger = warnRecorder();
+
+    await collectCycleTime({ jira, github: github() }, options, { existingRows: [{ released_at: "yesterday", issue_key: "GR-1" }], logger });
+
+    assert.match(jira.queries[0]!, /resolved >= "2026-01-01"/);
+    assert.deepEqual(logger.lines.map((l) => l.context?.existingRows), [1]);
+  });
+
+  it("emits a row without a start or cycle time when the issue never entered a started status", async () => {
     const issue = jiraIssue({ key: "CW-7", statusTransitions: [transition("done", "2026-02-10T16:00:00Z", "toDo")] });
     const jira = new FakeJiraSource([issue], { "7": [linkedPullRequest(prUrl("kato", 11))] });
 
-    const [row] = await collectCycleTime({ jira, github: github() }, { ...options, projects: [{ key: "CW", team: "Kato Core" }] }, ctx());
+    const [row] = await collectCycleTime({ jira, github: github() }, options, ctx());
 
     assert.equal(row?.team, "Kato Core");
     assert.equal(row?.started_at, null);
@@ -216,22 +228,23 @@ describe("reportUnlinkedPullRequests", () => {
       [
         shipped("Hotfix for uuid migration", "2026-03-01T10:00:00Z", 1),
         shipped("Awa 10288 kf availability", "2026-03-01T10:00:00Z", 2),
-        shipped("AWA-10290 amendments", "2026-03-01T10:00:00Z", 3),
+        shipped("Fix AWA-10290 amendments", "2026-03-01T10:00:00Z", 3),
         shipped("Main to Release", "2026-03-01T10:00:00Z", 4),
         shipped("GR-12 linked fine", "2026-03-01T10:00:00Z", 5),
         shipped("Old and unlinked", "2026-01-01T10:00:00Z", 6),
         shipped("Phase 2 rollout", "2026-03-01T10:00:00Z", 7),
+        shipped("Upgrade to Node 22", "2026-03-01T10:00:00Z", 8),
       ],
       new Date("2026-02-01T00:00:00Z"),
       ["GR", "CW"],
       logger,
     );
 
-    assert.deepEqual(report.unlinked.map((p) => p.ref.number), [1, 7]);
+    assert.deepEqual(report.unlinked.map((p) => p.ref.number), [1, 7, 8]);
     assert.deepEqual(report.otherProjects, { AWA: 2 });
     assert.deepEqual(
       logger.lines.map((l) => l.context?.pullRequest),
-      ["kato-app/kato#1", "kato-app/kato#7"],
+      ["kato-app/kato#1", "kato-app/kato#7", "kato-app/kato#8"],
     );
   });
 

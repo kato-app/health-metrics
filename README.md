@@ -139,7 +139,7 @@ If the tab has rows but none carries a readable `published_at`, a warning is log
 
 ### cycle-time
 
-One row per Jira issue that has been **delivered to production**, for the three teams' projects in `jira.projects`. All teams share the tab; the `project` and `team` columns tell them apart.
+One row per Jira issue that has been **delivered to production**, for the projects in `jira.projects`. All teams share the tab; the `project` and `team` columns tell them apart.
 
 **Definition.** Cycle time runs from the moment the issue was first moved into `In Progress` (configurable via `jira.startStatuses`) to the moment the GitHub release containing the issue's **last** pull request was published. Lead time runs from the issue's creation to that same release. Both are **calendar days to two decimals: weekends and holidays are included**, so a story started on Friday and released on Monday shows about 3 days. Remind consumers of this when they read the sheet.
 
@@ -159,7 +159,7 @@ One row per Jira issue that has been **delivered to production**, for the three 
 | `issue_type` | Story, Bug, Task, ... |
 | `summary` | Issue title. |
 | `created_at` | Issue creation. Start of lead time. |
-| `started_at` | First move into a start status. Start of cycle time. Blank if the issue never entered one. |
+| `started_at` | First move into a status in `jira.startStatuses`, or failing that into any status of Jira's "In Progress" category. Start of cycle time. Blank if neither ever happened. |
 | `done_at` | Last move into a Done-category status in Jira, or the resolution date if the changelog has none. |
 | `last_merged_at` | Merge time of the issue's most recently merged pull request. |
 | `pr_count` | Merged pull requests in collected repositories. |
@@ -173,8 +173,8 @@ One row per Jira issue that has been **delivered to production**, for the three 
 - is a sub-task (its parent is measured instead);
 - has a resolution listed in `jira.excludedResolutions`;
 - is already in the sheet;
+- still has a pull request that is neither merged nor declined (deferred: it will be measured once everything has merged and shipped);
 - has no merged pull request in a collected repository. Spikes, investigations and non-code tasks therefore never appear. Declined pull requests and pull requests in other repositories are ignored;
-- still has an open pull request (deferred: it will be measured once everything has merged and shipped);
 - has a merged pull request that no published release lists yet (deferred until the release is cut);
 - was released before `startDate`.
 
@@ -182,7 +182,9 @@ Each run logs a count per reason at `info` and the individual decisions at `debu
 
 **Delta collection.** The watermark is the newest `released_at` in the tab. Each run queries Jira for issues resolved on or after the watermark **minus 90 days** (never earlier than `startDate`), skips keys already in the sheet before any further lookups, and evaluates the rest. The long window exists because an issue can be Done in Jira weeks before its pull request ships; deferred issues are re-evaluated on every run until they qualify. Rows are appended oldest release first, then by issue key.
 
-**Unlinked pull requests.** Every run audits the pull requests shipped in releases newer than the watermark. Those whose title carries no recognisable issue key are logged at `warn`, one line each with repository, number, title and release, so the title (or the Jira link) can be fixed at the source; GitHub for Jira re-links a pull request when its title changes. Pull requests keyed to Jira projects that are not in `jira.projects` (for example the legacy `AWA` project) are summarised in one `info` line as a count per project. Branch-sync and version-cut pull requests such as "Main to Release" or "v77.9" are ignored. Matching is tolerant of GitHub's branch-derived titles, so `Gr 272 add users` counts as `GR-272`.
+If the tab has rows but none carries a readable `released_at`, a warning is logged and Jira is queried from `startDate`; key de-duplication still prevents duplicate rows.
+
+**Unlinked pull requests.** Every run audits the pull requests shipped in releases newer than the watermark. Those whose title carries no recognisable issue key are logged at `warn`, one line each with repository, number, title and release, so the title (or the Jira link) can be fixed at the source; GitHub for Jira re-links a pull request when its title changes. Pull requests keyed to Jira projects that are not in `jira.projects` (for example the legacy `AWA` project) are summarised in one `info` line as a count per project; a strict key such as `AWA-10290` counts anywhere in the title, a branch-derived one such as `Awa 10288 ...` only at its start, so "Upgrade to Node 22" is still reported as unlinked. Branch-sync and version-cut pull requests such as "Main to Release" or "v77.9" are ignored. Matching is tolerant of GitHub's branch-derived titles, so `Gr 272 add users` counts as `GR-272`.
 
 **Aggregating in the sheet.** The tab holds raw rows only. For a weekly median, 70th and 85th percentile per team, add a summary tab with, for example:
 

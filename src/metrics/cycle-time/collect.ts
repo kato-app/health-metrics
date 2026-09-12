@@ -1,7 +1,7 @@
 import type { JiraProject } from "../../config/schema.js";
 import type { CollectContext, MetricRow } from "../../core/metric.js";
 import { MS_PER_DAY, newestSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
-import { parsePullRequestUrl, repoFullName, type GitHubSource, type PullRequestRef, type RepoRef } from "../../sources/github/source.js";
+import { parsePullRequestUrl, pullRequestKey, repoFullName, type GitHubSource, type PullRequestRef, type RepoRef } from "../../sources/github/source.js";
 import type { JiraIssue, JiraSource, LinkedPullRequest } from "../../sources/jira/source.js";
 import { buildReleaseIndex, type ReleaseRef } from "./release-index.js";
 import { findDoneAt, findStartedAt, toRow, type DeliveredIssue } from "./transform.js";
@@ -40,7 +40,11 @@ function byReleasedThenKey(a: MetricRow, b: MetricRow): number {
   return String(a.issue_key) < String(b.issue_key) ? -1 : 1;
 }
 
-/** Linked pull requests that live in one of the repositories we collect from, excluding declined ones. */
+/**
+ * Linked pull requests that live in one of the repositories we collect from,
+ * excluding declined ones. Jira reports OPEN, MERGED or DECLINED; anything
+ * else it may add (a draft, say) counts as not merged yet.
+ */
 function relevantPullRequests(linked: readonly LinkedPullRequest[], repos: readonly RepoRef[]): { ref: PullRequestRef; status: string }[] {
   const known = new Set(repos.map(repoFullName));
   return linked.flatMap((pr) => {
@@ -59,6 +63,9 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
   const { logger, existingRows } = context;
   const startDate = startOfUtcDay(options.startDate);
   const watermark = newestSheetDate(existingRows, "released_at");
+  if (!watermark && existingRows.length > 0) {
+    logger.warn("Existing rows have no readable released_at; querying Jira from the start date", { existingRows: existingRows.length });
+  }
   const graceMs = (options.graceDays ?? DEFAULT_GRACE_DAYS) * MS_PER_DAY;
   const resolvedSince = watermark ? new Date(Math.max(startDate.getTime(), watermark.getTime() - graceMs)) : startDate;
   const knownKeys = new Set(existingRows.map((row) => String(row.issue_key)));
@@ -94,13 +101,13 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
     const pullRequests = relevantPullRequests(await jira.listLinkedPullRequests(issue.id), options.repos);
     const merged = pullRequests.filter((pr) => pr.status === "MERGED");
     const open = pullRequests.filter((pr) => pr.status !== "MERGED");
+    if (open.length > 0) return skip(issue, "openPullRequests", { open: open.map((pr) => `${pullRequestKey(pr.ref)} ${pr.status}`) });
     if (merged.length === 0) return skip(issue, "noMergedPullRequests");
-    if (open.length > 0) return skip(issue, "openPullRequests", { open: open.map((pr) => pr.ref.number) });
 
     const releases: ReleaseRef[] = [];
     for (const pr of merged) {
       const release = index.releaseFor(pr.ref);
-      if (!release) return skip(issue, "unreleasedPullRequests", { pullRequest: `${repoFullName(pr.ref.repo)}#${pr.ref.number}` });
+      if (!release) return skip(issue, "unreleasedPullRequests", { pullRequest: pullRequestKey(pr.ref) });
       releases.push(release);
     }
     const releasedAt = latest(releases.map((r) => r.publishedAt));

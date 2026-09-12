@@ -164,9 +164,8 @@ export function linkedPullRequest(url: string, status = "MERGED", sourceBranch: 
 }
 
 /**
- * In-memory Jira. `searchIssues` returns the issues whose project key appears
- * in the JQL, oldest resolved first, and records every query so tests can
- * assert on the watermark date.
+ * In-memory Jira. `searchIssues` only records the JQL, so tests can assert on
+ * the query, and yields every issue oldest resolved first.
  */
 export class FakeJiraSource implements JiraSource {
   readonly queries: string[] = [];
@@ -180,9 +179,7 @@ export class FakeJiraSource implements JiraSource {
 
   async *searchIssues(jql: string): AsyncIterable<JiraIssue> {
     this.queries.push(jql);
-    const projects = /project in \(([^)]+)\)/.exec(jql)?.[1]?.split(",").map((k) => k.trim()) ?? [];
-    const matching = this.issues.filter((i) => projects.includes(i.projectKey));
-    for (const issue of matching.sort((a, b) => (a.resolvedAt?.getTime() ?? 0) - (b.resolvedAt?.getTime() ?? 0))) yield issue;
+    yield* [...this.issues].sort((a, b) => (a.resolvedAt?.getTime() ?? 0) - (b.resolvedAt?.getTime() ?? 0));
   }
 
   async listStatusCategories() {
