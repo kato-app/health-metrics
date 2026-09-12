@@ -25,6 +25,14 @@ export const configSchema = z.object({
         }),
       )
       .min(1),
+    /**
+     * Status names (case-insensitive) whose first entry marks the start of an
+     * issue's cycle. If an issue never enters one of these, the first status in
+     * Jira's "In Progress" category is used instead.
+     */
+    startStatuses: z.array(z.string().min(1)).min(1).default(["In Progress"]),
+    /** Resolutions that mean the issue was closed without being delivered; such issues are never measured. */
+    excludedResolutions: z.array(z.string().min(1)).default(["Won't Do", "Duplicate", "Cannot Reproduce"]),
   }),
   logging: z.object({
     /** Project-relative path of the JSON log file that is appended to on every run. */

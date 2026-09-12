@@ -12,13 +12,16 @@ import { createSheetsSink } from "./sinks/google-sheets/sheets-sink.js";
 import { createOctokitSource } from "./sources/github/octokit-source.js";
 import { createRepoRegistry, type RepoRegistry } from "./sources/github/repo-registry.js";
 import type { GitHubSource } from "./sources/github/source.js";
+import { createJiraClient } from "./sources/jira/jira-client.js";
+import type { JiraSource } from "./sources/jira/source.js";
 
 /** For commands that only describe metrics and must never reach the network. */
 function offline(): never {
-  throw new Error("GitHub is not available in this command");
+  throw new Error("Source systems are not available in this command");
 }
 const offlineGitHub: GitHubSource = { listReleases: offline, listReposWithReleases: offline, getPullRequest: offline };
 const offlineRepos: RepoRegistry = { list: offline };
+const offlineJira: JiraSource = { searchIssues: offline, listStatusCategories: offline, listLinkedPullRequests: offline };
 
 interface RunCommandOptions {
   all?: boolean;
@@ -64,7 +67,8 @@ async function runCommand(name: string | undefined, opts: RunCommandOptions): Pr
     const env = loadEnv();
     const github = createOctokitSource({ token: env.GITHUB_TOKEN, logger });
     const repos = createRepoRegistry({ github, owner: config.github.owner, excludeRepos: config.github.excludeRepos, logger });
-    const metrics = selectMetrics(createMetrics({ config, logger, github, repos }), name, opts.all);
+    const jira = createJiraClient({ baseUrl: env.ATLASSIAN_BASE_URL, email: env.ATLASSIAN_EMAIL, token: env.ATLASSIAN_TOKEN, logger });
+    const metrics = selectMetrics(createMetrics({ config, logger, github, repos, jira }), name, opts.all);
     const sink = createSink(config, env, logger);
     const results = await runMetrics(metrics, { sink, logger, dryRun: opts.dryRun ?? false });
 
@@ -90,6 +94,7 @@ function listCommand(): void {
     logger: createLogger({ consoleLevel: "warn" }),
     github: offlineGitHub,
     repos: offlineRepos,
+    jira: offlineJira,
   });
   if (metrics.length === 0) {
     console.log("No metrics registered.");

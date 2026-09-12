@@ -29,6 +29,8 @@ cp .env.example .env   # then fill in the values
 | `startDate` | Earliest date (UTC, inclusive) backfilled when a metric's tab is empty. |
 | `github.owner` | GitHub **organisation** whose repositories are discovered (see [Repository discovery](#repository-discovery)). A user account will not work. |
 | `github.excludeRepos` | Repository names (without the owner) to leave out of every metric even though they have releases. Optional; defaults to `[]`. |
+| `jira.startStatuses` | Status names (case-insensitive) whose first entry starts an issue's cycle. Optional; defaults to `["In Progress"]`. An issue that never enters one falls back to its first status in Jira's "In Progress" category. |
+| `jira.excludedResolutions` | Resolutions meaning "closed without delivering"; such issues are never measured. Optional; defaults to `["Won't Do", "Duplicate", "Cannot Reproduce"]`. |
 | `jira.projects` | Jira projects to collect issues from, each as `{ "key": "GR", "team": "Kato Growth" }`. Only these projects are queried; metrics that read Jira write the team name to the sheet alongside the project key. |
 | `logging.file` | Project-relative path of the JSON log file, appended to on every run. |
 
@@ -134,6 +136,61 @@ Why the grace window: GitHub orders the listing by `created_at`, which is the da
 If the tab has rows but none carries a readable `published_at`, a warning is logged and the metric backfills from `startDate`; id de-duplication still prevents duplicate rows.
 
 **Failure behaviour.** If repository discovery fails or any discovered repository cannot be read (404, 403, network), the whole metric run fails and nothing is written for it. Other metrics in a `--all` run are unaffected.
+
+### cycle-time
+
+One row per Jira issue that has been **delivered to production**, for the three teams' projects in `jira.projects`. All teams share the tab; the `project` and `team` columns tell them apart.
+
+**Definition.** Cycle time runs from the moment the issue was first moved into `In Progress` (configurable via `jira.startStatuses`) to the moment the GitHub release containing the issue's **last** pull request was published. Lead time runs from the issue's creation to that same release. Both are **calendar days to two decimals: weekends and holidays are included**, so a story started on Friday and released on Monday shows about 3 days. Remind consumers of this when they read the sheet.
+
+**Sources.**
+
+- Jira: `GET /rest/api/3/search/jql` with `expand=changelog` for issues in the configured projects whose status category is Done, resolved within the query window. `GET /rest/api/3/status` maps every status to its category. The development panel's dev-status endpoints list the pull requests GitHub for Jira has linked to each issue by branch name, commit message or title.
+- GitHub: the [Repository discovery](#repository-discovery) list, each repository's published releases since `startDate` (to build a pull request → release index from the generated release notes), and `GET /repos/{owner}/{repo}/pulls/{n}` for merge times.
+
+**Columns**, in order:
+
+| Column | Meaning |
+| --- | --- |
+| `released_at` | When the release containing the issue's last pull request was published (UTC). The end of the cycle and the watermark. |
+| `project` | Jira project key, e.g. `GR`. |
+| `team` | Team name from `jira.projects`. |
+| `issue_key` | e.g. `GR-304`. Unique per row; used for de-duplication. |
+| `issue_type` | Story, Bug, Task, ... |
+| `summary` | Issue title. |
+| `created_at` | Issue creation. Start of lead time. |
+| `started_at` | First move into a start status. Start of cycle time. Blank if the issue never entered one. |
+| `done_at` | Last move into a Done-category status in Jira, or the resolution date if the changelog has none. |
+| `last_merged_at` | Merge time of the issue's most recently merged pull request. |
+| `pr_count` | Merged pull requests in collected repositories. |
+| `repos` | Repositories those pull requests were merged into, comma-separated. |
+| `release_tags` | Releases that shipped them, as `repo@tag`, comma-separated. |
+| `cycle_time_days` | `released_at − started_at` in calendar days. Blank when `started_at` is blank. |
+| `lead_time_days` | `released_at − created_at` in calendar days. |
+
+**Exclusion and deferral rules.** An issue produces no row when it:
+
+- is a sub-task (its parent is measured instead);
+- has a resolution listed in `jira.excludedResolutions`;
+- is already in the sheet;
+- has no merged pull request in a collected repository. Spikes, investigations and non-code tasks therefore never appear. Declined pull requests and pull requests in other repositories are ignored;
+- still has an open pull request (deferred: it will be measured once everything has merged and shipped);
+- has a merged pull request that no published release lists yet (deferred until the release is cut);
+- was released before `startDate`.
+
+Each run logs a count per reason at `info` and the individual decisions at `debug`.
+
+**Delta collection.** The watermark is the newest `released_at` in the tab. Each run queries Jira for issues resolved on or after the watermark **minus 90 days** (never earlier than `startDate`), skips keys already in the sheet before any further lookups, and evaluates the rest. The long window exists because an issue can be Done in Jira weeks before its pull request ships; deferred issues are re-evaluated on every run until they qualify. Rows are appended oldest release first, then by issue key.
+
+**Unlinked pull requests.** Every run audits the pull requests shipped in releases newer than the watermark. Those whose title carries no recognisable issue key are logged at `warn`, one line each with repository, number, title and release, so the title (or the Jira link) can be fixed at the source; GitHub for Jira re-links a pull request when its title changes. Pull requests keyed to Jira projects that are not in `jira.projects` (for example the legacy `AWA` project) are summarised in one `info` line as a count per project. Branch-sync and version-cut pull requests such as "Main to Release" or "v77.9" are ignored. Matching is tolerant of GitHub's branch-derived titles, so `Gr 272 add users` counts as `GR-272`.
+
+**Aggregating in the sheet.** The tab holds raw rows only. For a weekly median, 70th and 85th percentile per team, add a summary tab with, for example:
+
+```
+=PERCENTILE(FILTER('cycle-time'!N:N, 'cycle-time'!C:C=$A2, 'cycle-time'!A:A>=$B2, 'cycle-time'!A:A<$B2+7), 0.5)
+```
+
+where column `A` of the summary holds the team and `B` the week start; swap `0.5` for `0.7` and `0.85`. Column `N` is `cycle_time_days`; use `O` for lead time.
 
 ## Adding a metric
 

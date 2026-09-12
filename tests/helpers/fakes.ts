@@ -1,6 +1,7 @@
 import type { Config } from "../../src/config/schema.js";
 import type { CollectContext, Metric, MetricRow } from "../../src/core/metric.js";
 import type { MetricSink } from "../../src/core/sink.js";
+import type { JiraIssue, JiraSource, LinkedPullRequest, StatusCategory, StatusTransition } from "../../src/sources/jira/source.js";
 import {
   pullRequestKey,
   type GitHubPullRequest,
@@ -15,7 +16,11 @@ export const validConfig: Config = {
   spreadsheetId: "sheet",
   startDate: "2026-01-01",
   github: { owner: "kato-app", excludeRepos: [] },
-  jira: { projects: [{ key: "GR", team: "Kato Growth" }] },
+  jira: {
+    projects: [{ key: "GR", team: "Kato Growth" }],
+    startStatuses: ["In Progress"],
+    excludedResolutions: ["Won't Do", "Duplicate", "Cannot Reproduce"],
+  },
   logging: { file: "logs/app.log" },
 };
 
@@ -102,4 +107,90 @@ export function fakeMetric(
   collect: (ctx: CollectContext) => Promise<MetricRow[]>,
 ): Metric {
   return { name, description: `fake ${name}`, columns, collect };
+}
+
+/** Status ids and categories used by the Jira fakes, mirroring a typical Jira Cloud workflow. */
+export const STATUS = {
+  toDo: { id: "1", name: "To Do", category: "new" },
+  sprintReady: { id: "2", name: "Sprint Ready", category: "new" },
+  inProgress: { id: "3", name: "In Progress", category: "indeterminate" },
+  codeReview: { id: "4", name: "Code Review", category: "indeterminate" },
+  readyForTesting: { id: "5", name: "Ready for Testing", category: "indeterminate" },
+  done: { id: "6", name: "Done", category: "done" },
+} as const;
+
+type StatusName = keyof typeof STATUS;
+
+export const STATUS_CATEGORIES: ReadonlyMap<string, StatusCategory> = new Map(
+  Object.values(STATUS).map((s) => [s.id, s.category]),
+);
+
+/** A status transition into `to` at `at`, from the previous status if given. */
+export function transition(to: StatusName, at: string, from?: StatusName): StatusTransition {
+  return {
+    at: new Date(at),
+    fromStatusId: from ? STATUS[from].id : null,
+    fromStatus: from ? STATUS[from].name : null,
+    toStatusId: STATUS[to].id,
+    toStatus: STATUS[to].name,
+  };
+}
+
+/** Builds a resolved Jira story; override whatever the test cares about. */
+export function jiraIssue(overrides: Partial<JiraIssue> & { key: string }): JiraIssue {
+  return {
+    id: overrides.key.replace(/\D/g, "") || "1",
+    projectKey: overrides.key.split("-")[0]!,
+    type: "Story",
+    isSubtask: false,
+    summary: `Deliver ${overrides.key}`,
+    status: "Done",
+    statusCategory: "done",
+    resolution: "Done",
+    createdAt: new Date("2026-02-01T09:00:00Z"),
+    resolvedAt: new Date("2026-02-10T16:00:00Z"),
+    statusTransitions: [
+      transition("sprintReady", "2026-02-02T09:00:00Z", "toDo"),
+      transition("inProgress", "2026-02-03T10:00:00Z", "sprintReady"),
+      transition("done", "2026-02-10T16:00:00Z", "inProgress"),
+    ],
+    ...overrides,
+  };
+}
+
+/** A pull request as Jira's development panel reports it. */
+export function linkedPullRequest(url: string, status = "MERGED", sourceBranch: string | null = null): LinkedPullRequest {
+  return { url, title: null, status, sourceBranch, lastUpdate: new Date("2026-02-09T12:00:00Z") };
+}
+
+/**
+ * In-memory Jira. `searchIssues` returns the issues whose project key appears
+ * in the JQL, oldest resolved first, and records every query so tests can
+ * assert on the watermark date.
+ */
+export class FakeJiraSource implements JiraSource {
+  readonly queries: string[] = [];
+  readonly linkedCalls: string[] = [];
+
+  constructor(
+    private readonly issues: readonly JiraIssue[],
+    private readonly linked: Record<string, LinkedPullRequest[]> = {},
+    private readonly categories: ReadonlyMap<string, StatusCategory | string> = STATUS_CATEGORIES,
+  ) {}
+
+  async *searchIssues(jql: string): AsyncIterable<JiraIssue> {
+    this.queries.push(jql);
+    const projects = /project in \(([^)]+)\)/.exec(jql)?.[1]?.split(",").map((k) => k.trim()) ?? [];
+    const matching = this.issues.filter((i) => projects.includes(i.projectKey));
+    for (const issue of matching.sort((a, b) => (a.resolvedAt?.getTime() ?? 0) - (b.resolvedAt?.getTime() ?? 0))) yield issue;
+  }
+
+  async listStatusCategories() {
+    return this.categories;
+  }
+
+  async listLinkedPullRequests(issueId: string): Promise<LinkedPullRequest[]> {
+    this.linkedCalls.push(issueId);
+    return this.linked[issueId] ?? [];
+  }
 }

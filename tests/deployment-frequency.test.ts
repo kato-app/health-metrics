@@ -7,7 +7,7 @@ import { collectDeploymentFrequency, findWatermark } from "../src/metrics/deploy
 import { deploymentFrequency } from "../src/metrics/deployment-frequency/index.js";
 import { COLUMNS, toRow } from "../src/metrics/deployment-frequency/transform.js";
 import { releaseSchema } from "../src/sources/github/source.js";
-import { FakeGitHubSource, release, validConfig } from "./helpers/fakes.js";
+import { FakeGitHubSource, FakeJiraSource, release, validConfig } from "./helpers/fakes.js";
 
 const kato = { owner: "kato-app", name: "kato" };
 const settings = { owner: "kato-app", name: "kato-settings" };
@@ -210,7 +210,7 @@ describe("deploymentFrequency factory", () => {
     };
     const github = new FakeGitHubSource({ kato: [release({ id: 1 })], "kato-settings": [release({ id: 2 })] });
 
-    const metric = deploymentFrequency({ config: validConfig, logger: noopLogger, github, repos });
+    const metric = deploymentFrequency({ config: validConfig, logger: noopLogger, github, repos, jira: new FakeJiraSource([]) });
     assert.equal(asked, 0);
 
     const rows = await metric.collect(ctx());

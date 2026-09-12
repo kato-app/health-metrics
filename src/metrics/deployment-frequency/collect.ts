@@ -1,5 +1,5 @@
 import type { CollectContext, MetricRow } from "../../core/metric.js";
-import { MS_PER_DAY, parseSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
+import { MS_PER_DAY, newestSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
 import { repoFullName, type GitHubSource, type RepoRef } from "../../sources/github/source.js";
 import { toRow } from "./transform.js";
 
@@ -23,12 +23,7 @@ export interface CollectOptions {
 
 /** Newest `published_at` already in the sheet, or undefined when none of the rows carries one. */
 export function findWatermark(existingRows: readonly MetricRow[]): Date | undefined {
-  let newest: Date | undefined;
-  for (const row of existingRows) {
-    const date = parseSheetDate(row.published_at);
-    if (date && (!newest || date > newest)) newest = date;
-  }
-  return newest;
+  return newestSheetDate(existingRows, "published_at");
 }
 
 /** Oldest first. `published_at` is a fixed-width UTC string, so plain comparison orders it chronologically. */

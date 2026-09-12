@@ -21,6 +21,19 @@ export function parseSheetDate(value: unknown): Date | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
+/**
+ * Newest sheet-format date in `column` across `rows`, or undefined when none
+ * parses. Metrics use this as their watermark over the rows already written.
+ */
+export function newestSheetDate(rows: readonly Readonly<Record<string, unknown>>[], column: string): Date | undefined {
+  let newest: Date | undefined;
+  for (const row of rows) {
+    const date = parseSheetDate(row[column]);
+    if (date && (!newest || date > newest)) newest = date;
+  }
+  return newest;
+}
+
 /** Number format pattern that displays a serial date-time in the same shape as `formatSheetDate`. */
 export const SHEET_DATE_PATTERN = "yyyy-mm-dd hh:mm:ss";
 
