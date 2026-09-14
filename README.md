@@ -221,9 +221,9 @@ A **snapshot** of every pull request shipped in a published release since `start
 
 - `No issue key in title`: nothing that looks like an issue key. Add the key to the title; GitHub for Jira re-links a pull request when its title changes.
 - `Issue key is not a configured Jira project`: the title names a project that is not in `jira.projects`, such as a legacy project. A strict key like `AWA-10290` counts anywhere in the title; a branch-derived one like `Awa 10288 ...` only at its start, so "Upgrade to Node 22" is reported as key-less instead.
-- `Jira issue has no linked pull request`: the title names a configured issue, but Jira shows no development information for it, so the link never happened. Usually the branch or title was edited after the fact; re-saving the title or adding the key to a commit fixes it.
+- `Jira issue has no linked pull request`: the title names a configured issue, but Jira shows no development information for it, so the link never happened. Usually the branch or title was edited after the fact; re-saving the title or adding the key to a commit fixes it. A title naming several issues counts as linked if any of them is linked in Jira.
 
-Branch-sync and version-cut pull requests such as "Main to Release", "v77.9" or "Merge pull request #…" are never listed. Matching is tolerant of GitHub's branch-derived titles, so `Gr 272 add users` counts as `GR-272`; the project's first letter must be upper case so that "Retry at 3 seconds" does not read as `AT-3`. Rows are ordered oldest release first, then by repository and number.
+Branch-sync and version-cut pull requests such as "Main to Release", "Release for v70.7", "kato v76.3", "Update release branch with main" or "Merge pull request #…" are never listed. Matching is tolerant of GitHub's branch-derived titles, so `Gr 272 add users` counts as `GR-272`; the project's first letter must be upper case so that "Retry at 3 seconds" does not read as `AT-3`. Rows are ordered oldest release first, then by repository and number.
 
 ## Adding a metric
 

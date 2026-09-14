@@ -60,3 +60,14 @@ describe("isHousekeepingPullRequest", () => {
     }
   });
 });
+
+describe("isHousekeepingPullRequest: release-cut variants seen in the wild", () => {
+  it("recognises 'Release for vX', versioned repo names and branch refreshes, but not feature titles containing 'release'", () => {
+    for (const title of ["Release for v70.7", "Release for v72", "Release for v 73.31", "Release <-- Main", "Main <-- Release", "Merging Main to Release due to Hotfix", "Release for v70 (Transaction Confidentiality)", "Release v4.3 to main", "v73.15 Release", "kato v76.3", "Update release branch with main"]) {
+      assert.ok(isHousekeepingPullRequest(title), title);
+    }
+    for (const title of ["Release notes page redesign", "Hotfix. Update labels to ULA related stuff. TO RELEASE", "awa-00000-hotfix-loader-example-file", "Prepare release checklist for v2 rollout"]) {
+      assert.equal(isHousekeepingPullRequest(title), false, title);
+    }
+  });
+});

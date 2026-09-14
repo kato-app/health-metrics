@@ -29,7 +29,8 @@ export function parseReleaseNotes(body: string | null | undefined): ReleaseNoteP
 }
 
 const BRANCH = String.raw`(?:main|release|develop|staging)`;
-const VERSION = String.raw`v?\d+(?:\.\d+)*`;
+const VERSION = String.raw`(?:v\s?)?\d+(?:\.\d+)*`;
+const ARROW = String.raw`(?:=>|->|<-+|to|into)`;
 
 /**
  * Titles of pull requests that exist to move code between long-lived branches
@@ -39,8 +40,11 @@ const VERSION = String.raw`v?\d+(?:\.\d+)*`;
  */
 const HOUSEKEEPING_TITLE = new RegExp(
   [
-    String.raw`^${BRANCH}\s*(?:=>|->|to|into)\s*${BRANCH}\b`, // "Main to Release", "Release => Main v77.10"
-    String.raw`^(?:release(?:\s+${VERSION})?|${VERSION})$`, // "release", "Release v2.25.1", "Release 77", "v77", "v77.9", "2.25.1"
+    String.raw`^(?:merging\s+)?${BRANCH}\s*${ARROW}\s*${BRANCH}\b`, // "Main to Release", "Release => Main v77.10", "Release <-- Main", "Merging Main to Release due to Hotfix"
+    String.raw`^update ${BRANCH} branch (?:with|from) ${BRANCH}\b`, // "Update release branch with main"
+    String.raw`^(?:release(?:\s+(?:for\s+)?${VERSION})?|${VERSION})(?:\s+to\s+${BRANCH})?(?:\s*\(.*\))?$`, // "release", "Release v2.25.1", "Release for v70.7", "Release v4.3 to main", "Release for v70 (Confidentiality)", "v77.9"
+    String.raw`^(?:${VERSION}|[a-z][\w-]*\s+${VERSION})\s+release$`, // "v73.15 Release"
+    String.raw`^[a-z][\w-]*\s+${VERSION}$`, // "kato v76.3": repository name plus version
     String.raw`^merge (?:pull request|branch)\b`, // GitHub's default title for a merge commit
   ].join("|"),
   "i",
