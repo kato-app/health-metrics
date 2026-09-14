@@ -229,10 +229,11 @@ describe("reportUnlinkedPullRequests", () => {
   const shipped = (title: string, publishedAt: string, n = 1) => ({
     ref: { repo: kato, number: n },
     title,
+    author: "kato-jm",
     release: { repo: kato, tag: "v1", publishedAt: new Date(publishedAt) },
   });
 
-  it("lists key-less pull requests, counts other projects, and ignores housekeeping, keyed and older releases", () => {
+  it("classifies pull requests shipped after the watermark and logs one summary line rather than one warning each", () => {
     const logger = warnRecorder();
     const report = reportUnlinkedPullRequests(
       [
@@ -250,17 +251,22 @@ describe("reportUnlinkedPullRequests", () => {
       logger,
     );
 
-    assert.deepEqual(report.unlinked.map((p) => p.ref.number), [1, 7, 8]);
-    assert.deepEqual(report.otherProjects, { AWA: 2 });
     assert.deepEqual(
-      logger.lines.map((l) => l.context?.pullRequest),
-      ["kato-app/kato#1", "kato-app/kato#7", "kato-app/kato#8"],
+      report.map((u) => [u.pullRequest.ref.number, u.reason]),
+      [
+        [1, "No issue key in title"],
+        [2, "Issue key is not a configured Jira project"],
+        [3, "Issue key is not a configured Jira project"],
+        [7, "No issue key in title"],
+        [8, "No issue key in title"],
+      ],
     );
+    assert.equal(logger.lines.length, 0, "no per-pull-request warnings; the unlinked-prs tab carries the list");
   });
 
   it("audits everything when there is no watermark", () => {
     const report = reportUnlinkedPullRequests([shipped("Old and unlinked", "2026-01-01T10:00:00Z")], undefined, ["GR"], noopLogger);
-    assert.equal(report.unlinked.length, 1);
+    assert.equal(report.length, 1);
   });
 });
 

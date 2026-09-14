@@ -4,6 +4,8 @@ import { parsePullRequestUrl, pullRequestKey, type PullRequestRef } from "./sour
 export interface ReleaseNotePullRequest {
   readonly ref: PullRequestRef;
   readonly title: string;
+  /** GitHub login of the pull request's author, as written after "by @". */
+  readonly author: string;
 }
 
 /**
@@ -11,17 +13,17 @@ export interface ReleaseNotePullRequest {
  * `* <title> by @<login> in https://github.com/<owner>/<repo>/pull/<n>`
  * The trailing token is any URL; `parsePullRequestUrl` decides whether it is a pull request.
  */
-const NOTE_LINE = /^\s*[*-]\s+(.+?)\s+by\s+@\S+\s+in\s+(\S+)\s*$/gm;
+const NOTE_LINE = /^\s*[*-]\s+(.+?)\s+by\s+@(\S+)\s+in\s+(\S+)\s*$/gm;
 
 /** Pull requests listed in a release body, in order, each at most once. */
 export function parseReleaseNotes(body: string | null | undefined): ReleaseNotePullRequest[] {
   if (!body) return [];
   const byKey = new Map<string, ReleaseNotePullRequest>();
-  for (const [, title, url] of body.matchAll(NOTE_LINE)) {
+  for (const [, title, author, url] of body.matchAll(NOTE_LINE)) {
     const ref = parsePullRequestUrl(url!);
     if (!ref) continue;
     const key = pullRequestKey(ref);
-    if (!byKey.has(key)) byKey.set(key, { ref, title: title!.trim() });
+    if (!byKey.has(key)) byKey.set(key, { ref, title: title!.trim(), author: author! });
   }
   return [...byKey.values()];
 }

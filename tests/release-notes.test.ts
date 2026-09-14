@@ -27,10 +27,10 @@ describe("parsePullRequestUrl", () => {
 describe("parseReleaseNotes", () => {
   it("returns each listed pull request once with its title, ignoring other links and the changelog footer", () => {
     assert.deepEqual(parseReleaseNotes(SAMPLE_BODY), [
-      { ref: { repo: kato, number: 4193 }, title: "CW-394: Disposals index card shows rent figure when rent on application is selected" },
-      { ref: { repo: kato, number: 4183 }, title: "CW-305 Send 2FA Codes from dedicated Email Address" },
-      { ref: { repo: kato, number: 4202 }, title: "v77.9" },
-      { ref: { repo: kato, number: 4162 }, title: "Awa 10288 kf availability schedule update rent field" },
+      { ref: { repo: kato, number: 4193 }, title: "CW-394: Disposals index card shows rent figure when rent on application is selected", author: "kato-jm" },
+      { ref: { repo: kato, number: 4183 }, title: "CW-305 Send 2FA Codes from dedicated Email Address", author: "kato-jm" },
+      { ref: { repo: kato, number: 4202 }, title: "v77.9", author: "kato-jm" },
+      { ref: { repo: kato, number: 4162 }, title: "Awa 10288 kf availability schedule update rent field", author: "someone-else" },
     ]);
   });
 
@@ -42,7 +42,7 @@ describe("parseReleaseNotes", () => {
 
   it("de-duplicates a pull request listed twice, even under differently written URLs", () => {
     const body = ["* Same by @a in https://github.com/kato-app/kato/pull/1", "* Same again by @a in https://github.com/kato-app/kato/pull/1/files"].join("\n");
-    assert.deepEqual(parseReleaseNotes(body), [{ ref: { repo: kato, number: 1 }, title: "Same" }]);
+    assert.deepEqual(parseReleaseNotes(body), [{ ref: { repo: kato, number: 1 }, title: "Same", author: "a" }]);
   });
 });
 

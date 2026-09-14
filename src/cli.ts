@@ -21,7 +21,12 @@ function offline(): never {
 }
 const offlineGitHub: GitHubSource = { listReleases: offline, listReposWithReleases: offline, getPullRequest: offline };
 const offlineRepos: RepoRegistry = { list: offline };
-const offlineJira: JiraSource = { searchIssues: offline, listStatusCategories: offline, listLinkedPullRequests: offline };
+const offlineJira: JiraSource = {
+  searchIssues: offline,
+  searchIssueKeys: offline,
+  listStatusCategories: offline,
+  listLinkedPullRequests: offline,
+};
 
 interface RunCommandOptions {
   all?: boolean;

@@ -13,6 +13,8 @@ export interface ReleaseRef {
 export interface ShippedPullRequest {
   readonly ref: PullRequestRef;
   readonly title: string;
+  /** GitHub login of the author, from the release notes. */
+  readonly author: string;
   readonly release: ReleaseRef;
 }
 
@@ -52,10 +54,10 @@ export async function buildReleaseIndex(
       releases += 1;
 
       const releaseRef: ReleaseRef = { repo, tag: release.tag_name, publishedAt };
-      for (const { ref, title } of parseReleaseNotes(release.body)) {
+      for (const { ref, title, author } of parseReleaseNotes(release.body)) {
         const key = pullRequestKey(ref);
         const existing = byPullRequest.get(key);
-        if (!existing || publishedAt < existing.release.publishedAt) byPullRequest.set(key, { ref, title, release: releaseRef });
+        if (!existing || publishedAt < existing.release.publishedAt) byPullRequest.set(key, { ref, title, author, release: releaseRef });
       }
     }
     logger.debug("Indexed releases", { repo: repoFullName(repo) });

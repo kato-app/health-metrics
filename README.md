@@ -187,7 +187,7 @@ Each run logs a count per reason at `info` and the individual decisions at `debu
 
 If the tab has rows but none carries a readable `released_at`, a warning is logged and Jira is queried from `startDate`; key de-duplication still prevents duplicate rows.
 
-**Unlinked pull requests.** Every run audits the pull requests shipped in releases newer than the watermark. Those whose title carries no recognisable issue key are logged at `warn`, one line each with repository, number, title and release, so the title (or the Jira link) can be fixed at the source; GitHub for Jira re-links a pull request when its title changes. Pull requests keyed to Jira projects that are not in `jira.projects` (for example the legacy `AWA` project) are summarised in one `info` line as a count per project; a strict key such as `AWA-10290` counts anywhere in the title, a branch-derived one such as `Awa 10288 ...` only at its start, so "Upgrade to Node 22" is still reported as unlinked. Branch-sync and version-cut pull requests such as "Main to Release" or "v77.9" are ignored. Matching is tolerant of GitHub's branch-derived titles, so `Gr 272 add users` counts as `GR-272`.
+**Unlinked pull requests.** Every run logs one `info` line counting the pull requests shipped in releases newer than the watermark that cycle time cannot attribute to a configured Jira issue: those with no issue key in the title, and a count per foreign Jira project for the rest. The full, always-current list is the [unlinked-prs](#unlinked-prs) tab.
 
 **Aggregating in the sheet.** The tab holds raw rows only. For a weekly median, 70th and 85th percentile per team, add a summary tab with, for example:
 
@@ -196,6 +196,34 @@ If the tab has rows but none carries a readable `released_at`, a warning is logg
 ```
 
 where column `A` of the summary holds the team and `B` the week start; swap `0.5` for `0.7` and `0.85`. Column `N` is `cycle_time_days`; use `O` for lead time.
+
+### unlinked-prs
+
+A **snapshot** of every pull request shipped in a published release since `startDate` that [cycle-time](#cycle-time) cannot attribute to a configured Jira issue. It is a safety net for sidestepped process: work through it with the team and it should trend to empty. Every run (it is part of `run --all`, so every cycle-time run) re-audits all releases and rewrites the tab, so fixing a pull request removes its row on the next run. `--full` changes nothing here because a snapshot already covers everything.
+
+**Sources.** The same release index as cycle-time (GitHub release notes, which also supply the author login), plus one Jira JQL query, `project in (<configured>) AND development[pullrequests].all = 0 AND updated >= "<startDate>"`, which returns the issues that have no pull request linked at all.
+
+**Columns**, in order:
+
+| Column | Meaning |
+| --- | --- |
+| `released_at` | When the release that shipped the pull request was published (UTC). |
+| `repo` | `owner/name`. |
+| `pr_number` | Pull request number. |
+| `author` | GitHub login of the author, as listed in the release notes. Who to talk to. |
+| `title` | Pull request title as shipped. |
+| `reason` | One of the three reasons below. |
+| `issue_keys` | Issue keys found in the title, if any. |
+| `release_tag` | The release that shipped it. |
+| `url` | Link to the pull request. |
+
+**Reasons.**
+
+- `No issue key in title`: nothing that looks like an issue key. Add the key to the title; GitHub for Jira re-links a pull request when its title changes.
+- `Issue key is not a configured Jira project`: the title names a project that is not in `jira.projects`, such as a legacy project. A strict key like `AWA-10290` counts anywhere in the title; a branch-derived one like `Awa 10288 ...` only at its start, so "Upgrade to Node 22" is reported as key-less instead.
+- `Jira issue has no linked pull request`: the title names a configured issue, but Jira shows no development information for it, so the link never happened. Usually the branch or title was edited after the fact; re-saving the title or adding the key to a commit fixes it.
+
+Branch-sync and version-cut pull requests such as "Main to Release", "v77.9" or "Merge pull request #…" are never listed. Matching is tolerant of GitHub's branch-derived titles, so `Gr 272 add users` counts as `GR-272`; the project's first letter must be upper case so that "Retry at 3 seconds" does not read as `AT-3`. Rows are ordered oldest release first, then by repository and number.
 
 ## Adding a metric
 

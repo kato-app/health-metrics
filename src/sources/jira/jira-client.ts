@@ -54,6 +54,20 @@ const changelogPageSchema = z.object({
   isLast: z.boolean(),
 });
 
+/** A search page when only issue keys were requested. */
+const issueKeyPageSchema = z.object({
+  issues: z.array(z.object({ key: z.string() })),
+  nextPageToken: z.string().nullish(),
+  isLast: z.boolean().optional(),
+});
+
+/** What every `/search/jql` page carries besides its issues. */
+interface SearchPage {
+  readonly issues: readonly unknown[];
+  readonly nextPageToken?: string | null | undefined;
+  readonly isLast?: boolean | undefined;
+}
+
 const statusesSchema = z.array(z.object({ id: z.string(), statusCategory: z.object({ key: z.string() }) }));
 
 /**
@@ -162,24 +176,30 @@ export function createJiraClient(options: JiraClientOptions): JiraSource {
     }
   }
 
+  /** Pages through `/search/jql` by token, yielding each validated page. Fails rather than truncating silently. */
+  async function* searchPages<T extends SearchPage>(jql: string, params: Record<string, string>, schema: z.ZodType<T>): AsyncIterable<T> {
+    let nextPageToken: string | undefined;
+    for (let page = 1; ; page += 1) {
+      const result = await get("/rest/api/3/search/jql", { jql, ...params, maxResults: String(PAGE_SIZE), nextPageToken }, schema);
+      logger.debug("Fetched issues page", { page, count: result.issues.length });
+      yield result;
+
+      if (result.isLast === false && !result.nextPageToken) {
+        throw new Error(`Jira reported more issues but returned no nextPageToken (page ${page})`);
+      }
+      if (result.isLast || !result.nextPageToken) return;
+      nextPageToken = result.nextPageToken;
+    }
+  }
+
   return {
     async *searchIssues(jql: string): AsyncIterable<JiraIssue> {
-      let nextPageToken: string | undefined;
-      for (let page = 1; ; page += 1) {
-        const result = await get(
-          "/rest/api/3/search/jql",
-          { jql, fields: ISSUE_FIELDS.join(","), expand: "changelog", maxResults: String(PAGE_SIZE), nextPageToken },
-          searchPageSchema,
-        );
-        logger.debug("Fetched issues page", { page, count: result.issues.length });
-        for (const raw of result.issues) yield toJiraIssue(raw, await completeChangelog(raw));
+      const pages = searchPages(jql, { fields: ISSUE_FIELDS.join(","), expand: "changelog" }, searchPageSchema);
+      for await (const page of pages) for (const raw of page.issues) yield toJiraIssue(raw, await completeChangelog(raw));
+    },
 
-        if (result.isLast === false && !result.nextPageToken) {
-          throw new Error(`Jira reported more issues but returned no nextPageToken (page ${page})`);
-        }
-        if (result.isLast || !result.nextPageToken) return;
-        nextPageToken = result.nextPageToken;
-      }
+    async *searchIssueKeys(jql: string): AsyncIterable<string> {
+      for await (const page of searchPages(jql, { fields: "key" }, issueKeyPageSchema)) for (const issue of page.issues) yield issue.key;
     },
 
     async listStatusCategories() {

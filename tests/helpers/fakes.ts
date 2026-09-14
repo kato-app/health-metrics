@@ -181,11 +181,18 @@ export class FakeJiraSource implements JiraSource {
     private readonly issues: readonly JiraIssue[],
     private readonly linked: Record<string, LinkedPullRequest[]> = {},
     private readonly categories: ReadonlyMap<string, StatusCategory | string> = STATUS_CATEGORIES,
+    /** What `searchIssueKeys` answers, whatever the JQL: the keys of issues with no development information. */
+    private readonly issueKeysWithoutLinks: readonly string[] = [],
   ) {}
 
   async *searchIssues(jql: string): AsyncIterable<JiraIssue> {
     this.queries.push(jql);
     yield* [...this.issues].sort((a, b) => (a.resolvedAt?.getTime() ?? 0) - (b.resolvedAt?.getTime() ?? 0));
+  }
+
+  async *searchIssueKeys(jql: string): AsyncIterable<string> {
+    this.queries.push(jql);
+    yield* this.issueKeysWithoutLinks;
   }
 
   async listStatusCategories() {

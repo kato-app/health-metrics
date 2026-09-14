@@ -131,6 +131,8 @@ export interface LinkedPullRequest {
 export interface JiraSource {
   /** Issues matching a JQL query, with their complete status changelog. Pages lazily. */
   searchIssues(jql: string): AsyncIterable<JiraIssue>;
+  /** Only the keys of issues matching a JQL query: far cheaper than `searchIssues` when nothing else is needed. */
+  searchIssueKeys(jql: string): AsyncIterable<string>;
   /** Every workflow status in the site, keyed by status id, mapped to its category. */
   listStatusCategories(): Promise<ReadonlyMap<string, StatusCategory | string>>;
   /** Pull requests the GitHub integration has linked to the issue with this numeric id. */
