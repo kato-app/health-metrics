@@ -51,8 +51,8 @@ const HOUSEKEEPING_TITLE = new RegExp(
     String.raw`^(?:merging\s+)?${BRANCH}\s*${ARROW}\s*${BRANCH}\b`,
     // Branch refreshes: "Update release branch with main"
     String.raw`^update ${BRANCH} branch (?:with|from) ${BRANCH}\b`,
-    // Version cuts: "release", "Release v2.25.1", "Release for v70.7", "Release v4.3 to main", "Release for v70 (Confidentiality)", "v77.9", "2.25.1", "v73.15 Release"
-    String.raw`^(?:release(?:\s+(?:for\s+)?${VERSION})?|${VERSION}(?:\s+release)?)(?:\s+to\s+${BRANCH})?(?:\s*\(.*\))?$`,
+    // Version cuts: "release", "Release v2.25.1", "Release for v70.7", "Release - v74.3", "Release v4.3 to main", "Release for v70 (Confidentiality)", "v77.9", "2.25.1", "v73.15 Release"
+    String.raw`^(?:release(?:(?:\s+(?:for\s+)?|\s*[-:]\s*)${VERSION})?|${VERSION}(?:\s+release)?)(?:\s+to\s+${BRANCH})?(?:\s*\(.*\))?$`,
     // Repository name plus tag: "kato v76.3", "kato v76.3 release"
     String.raw`^${WORD}\s+${TAGGED_VERSION}(?:\s+release)?$`,
     // GitHub's default title for a merge commit

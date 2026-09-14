@@ -62,6 +62,8 @@ describe("isHousekeepingPullRequest", () => {
       "Release 77",
       "Release v2.25.1",
       "Release for v70.7",
+      "Release - v74.3",
+      "Release: v74.3",
       "Release for v72",
       "Release for v 73.31",
       "Release for v70 (Transaction Confidentiality)",
