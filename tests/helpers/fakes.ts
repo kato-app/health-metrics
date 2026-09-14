@@ -81,7 +81,7 @@ export class FakeGitHubSource implements GitHubSource {
   }
 }
 
-/** In-memory sink that records what was read and appended. */
+/** In-memory sink that records every append and replace. */
 export class InMemorySink implements MetricSink {
   readonly tabs = new Map<string, MetricRow[]>();
   readonly appendCalls: { metric: string; rows: readonly MetricRow[] }[] = [];

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { MetricRow } from "../src/core/metric.js";
+import type { CollectContext, MetricRow } from "../src/core/metric.js";
 import { formatSheetDate, parseSheetDate } from "../src/core/sheet-date.js";
 import { noopLogger } from "../src/logging/logger.js";
 import { collectDeploymentFrequency, findWatermark } from "../src/metrics/deployment-frequency/collect.js";
@@ -12,7 +12,7 @@ import { FakeGitHubSource, FakeJiraSource, release, validConfig } from "./helper
 const kato = { owner: "kato-app", name: "kato" };
 const settings = { owner: "kato-app", name: "kato-settings" };
 const options = { repos: [kato, settings], startDate: "2026-01-01" };
-const ctx = (existingRows: readonly MetricRow[] = []) => ({ existingRows, full: false, logger: noopLogger });
+const ctx = (existingRows: readonly MetricRow[] = [], overrides: Partial<CollectContext> = {}) => ({ existingRows, full: false, logger: noopLogger, ...overrides });
 
 describe("sheet dates", () => {
   it("formats ISO timestamps as UTC 'YYYY-MM-DD HH:MM:SS'", () => {
@@ -160,6 +160,27 @@ describe("collectDeploymentFrequency", () => {
 
     assert.deepEqual(rows, []);
     assert.equal(github.yielded.get("kato"), 2);
+  });
+
+  it("with --full, pages back to the start date and skips known ids without warning about the watermark", async () => {
+    const existing = [{ published_at: "2026-06-01 10:00:00", id: 200 }];
+    const github = new FakeGitHubSource({
+      kato: [
+        release({ id: 300, published_at: "2026-06-10T10:00:00Z" }),
+        release({ id: 200, published_at: "2026-06-01T10:00:00Z" }), // already present
+        release({ id: 40, published_at: "2026-03-01T10:00:00Z" }), // outside the grace window: only --full sees it
+      ],
+      "kato-settings": [],
+    });
+    const logger = { ...noopLogger, warn: () => assert.fail("a readable watermark must not be reported as unreadable") };
+
+    const rows = await collectDeploymentFrequency(github, options, ctx(existing, { full: true, logger }));
+
+    assert.deepEqual(
+      rows.map((r) => r.id),
+      [40, 300],
+    );
+    assert.equal(github.yielded.get("kato"), 3);
   });
 
   it("backfills from the start date when existing rows carry no readable watermark", async () => {

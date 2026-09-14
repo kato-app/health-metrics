@@ -9,10 +9,10 @@ import type { Cell, SpreadsheetClient } from "./spreadsheet-client.js";
  * Stores each metric in a tab named after it, with the metric's columns as the
  * header row.
  *
- * A metric owns only its own columns, starting at A. Everything is read from
- * and appended within that block, so people can add helper columns and
- * formulas to the right of the data without breaking the header check or
- * pushing new rows below their formulas.
+ * A metric owns only its own columns, starting at A. Everything is read,
+ * appended and cleared within that block, so people can add helper columns and
+ * formulas to the right of the data without breaking the header check, pushing
+ * new rows below their formulas, or losing them when a snapshot is replaced.
  *
  * Encoding: rows are written RAW so Sheets never reinterprets text as a number,
  * date or formula. Cells in sheet-date format are the exception: they become
@@ -20,9 +20,9 @@ import type { Cell, SpreadsheetClient } from "./spreadsheet-client.js";
  * format after every write, so they read back as the same text.
  *
  * A sink instance lives for one CLI run, so it remembers the spreadsheet's tab
- * list and which headers it has already verified. The runner's read-then-append
+ * list and which headers it has already verified. The runner's read-then-write
  * sequence therefore costs one `listTabs` for the whole run and no second read
- * of the header before appending.
+ * of the header before appending or replacing.
  */
 export function createSheetsSink(client: SpreadsheetClient, logger: Logger): MetricSink {
   const log = logger.child({ sink: "google-sheets" });
@@ -89,8 +89,11 @@ export function createSheetsSink(client: SpreadsheetClient, logger: Logger): Met
 
     async replaceRows(metric, rows) {
       const sheetId = await ensureTabWithHeader(metric);
+      // Clearing first is what makes the append land at row 2. The two calls
+      // are not atomic: if the write fails, the tab stays empty (and the run
+      // exits non-zero) until the next successful run replaces it.
       await client.clearValues(metric.name, bodyRange(metric.columns.length));
-      log.info("Cleared tab below header", { tab: metric.name });
+      log.debug("Cleared tab below header", { tab: metric.name });
       if (rows.length > 0) await writeBelowHeader(metric, sheetId, rows);
     },
   };

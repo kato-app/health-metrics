@@ -17,7 +17,7 @@ export type MetricRunResult =
       readonly status: "ok";
       /** Rows the metric produced. */
       readonly rowsCollected: number;
-      /** Rows actually written to the sink; zero in a dry run. */
+      /** Rows actually written to the sink; zero in a dry run. For a snapshot metric, the tab's new row count (zero when it was emptied). */
       readonly rowsWritten: number;
     }
   | { readonly metric: string; readonly status: "failed"; readonly error: unknown };

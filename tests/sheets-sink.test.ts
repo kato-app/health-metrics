@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import type { Metric } from "../src/core/metric.js";
 import { MS_PER_DAY, SHEET_DATE_PATTERN, formatSheetDate, toSheetSerial } from "../src/core/sheet-date.js";
 import { noopLogger } from "../src/logging/logger.js";
-import { columnLetter, columnsRange, headerRange } from "../src/sinks/google-sheets/a1.js";
+import { bodyRange, columnLetter, columnsRange, headerRange } from "../src/sinks/google-sheets/a1.js";
 import { createSheetsSink, encodeCell } from "../src/sinks/google-sheets/sheets-sink.js";
 import type { Cell, SpreadsheetClient } from "../src/sinks/google-sheets/spreadsheet-client.js";
 import { fakeMetric } from "./helpers/fakes.js";
@@ -15,7 +15,7 @@ function trimTrailing<T>(items: T[], isEmpty: (item: T) => boolean): T[] {
   return items.slice(0, end);
 }
 
-/** Parses the ranges the sink uses: `A:H` (all rows, columns 0..7) or `A1:H1` (row 1 only). Undefined = whole tab. */
+/** Parses the ranges the sink uses: `A:H` (all rows, columns 0..7), `A1:H1` (row 1 only) or `A2:H` (row 2 down). Undefined = whole tab. */
 function parseRange(range: string | undefined): { columns: number; rowsFrom: number; rowsTo: number } {
   if (range === undefined) return { columns: Infinity, rowsFrom: 0, rowsTo: Infinity };
   const match = /^A(\d*):([A-Z]+)(\d*)$/.exec(range);
@@ -119,6 +119,7 @@ describe("a1 helpers", () => {
     assert.equal(columnLetter(701), "ZZ");
     assert.equal(columnsRange(8), "A:H");
     assert.equal(headerRange(8), "A1:H1");
+    assert.equal(bodyRange(8), "A2:H");
   });
 });
 

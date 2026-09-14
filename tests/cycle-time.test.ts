@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { MetricRow } from "../src/core/metric.js";
+import type { CollectContext, MetricRow } from "../src/core/metric.js";
 import type { LogContext, Logger } from "../src/logging/logger.js";
 import { noopLogger } from "../src/logging/logger.js";
 import { collectCycleTime, type CollectOptions } from "../src/metrics/cycle-time/collect.js";
@@ -31,7 +31,7 @@ const options: CollectOptions = {
   startStatuses: ["In Progress"],
   excludedResolutions: ["Won't Do", "Duplicate", "Cannot Reproduce"],
 };
-const ctx = (existingRows: MetricRow[] = []) => ({ existingRows, full: false, logger: noopLogger });
+const ctx = (existingRows: MetricRow[] = [], overrides: Partial<CollectContext> = {}) => ({ existingRows, full: false, logger: noopLogger, ...overrides });
 
 const prUrl = (repo: string, n: number) => `https://github.com/kato-app/${repo}/pull/${n}`;
 const note = (repo: string, n: number, title: string) => `* ${title} by @x in ${prUrl(repo, n)}`;
@@ -178,10 +178,20 @@ describe("collectCycleTime", () => {
     const jira = new FakeJiraSource([]);
     const logger = warnRecorder();
 
-    await collectCycleTime({ jira, github: github() }, options, { full: false, existingRows: [{ released_at: "yesterday", issue_key: "GR-1" }], logger });
+    await collectCycleTime({ jira, github: github() }, options, ctx([{ released_at: "yesterday", issue_key: "GR-1" }], { logger }));
 
     assert.match(jira.queries[0]!, /resolved >= "2026-01-01"/);
     assert.deepEqual(logger.lines.map((l) => l.context?.existingRows), [1]);
+  });
+
+  it("with --full, queries Jira from the start date without warning about a readable watermark", async () => {
+    const jira = new FakeJiraSource([]);
+    const logger = warnRecorder();
+
+    await collectCycleTime({ jira, github: github() }, options, ctx([{ released_at: "2026-06-01 10:00:00", issue_key: "GR-1" }], { full: true, logger }));
+
+    assert.match(jira.queries[0]!, /resolved >= "2026-01-01"/);
+    assert.deepEqual(logger.lines, []);
   });
 
   it("emits a row without a start or cycle time when the issue never entered a started status", async () => {
@@ -284,7 +294,7 @@ describe("collectCycleTime data-quality warnings", () => {
     });
     const jira = new FakeJiraSource([startedAfterRelease], { "1": [linkedPullRequest(prUrl("kato", 10))] });
 
-    const rows = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], full: false, logger });
+    const rows = await collectCycleTime({ jira, github: github() }, options, ctx([], { logger }));
 
     assert.equal(rows[0]?.cycle_time_days, -9);
     assert.deepEqual(

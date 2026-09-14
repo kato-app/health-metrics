@@ -1,6 +1,6 @@
 # HealthMetrics
 
-A small Node.js/TypeScript CLI that collects engineering health metrics from their source systems and appends them to a Google Sheet, one tab per metric. Each run collects only the delta since the last run.
+A small Node.js/TypeScript CLI that collects engineering health metrics from their source systems and writes them to a Google Sheet, one tab per metric. Most metrics append only the delta since the last run; a snapshot metric replaces its tab with the current picture.
 
 ## Setup
 
@@ -67,7 +67,7 @@ npm start -- list # run the compiled CLI (same commands as above)
 3. Share the target spreadsheet with the service account's email address as an **Editor**.
 4. Point `GOOGLE_SERVICE_ACCOUNT_KEY_FILE` in `.env` at the key file (relative paths resolve from the project root). The run aborts before contacting anything if the file does not exist.
 
-**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row starting at column A. The tab and header are created on the first write; an existing tab's first cells must match the metric's columns exactly (a blank first row above data counts as a mismatch), otherwise the run fails before writing anything. The metric only ever reads and writes its own block of columns, so you can add helper columns and formulas to the right of the data: they are ignored by the header check, and new rows are written directly under the last row that has data in the metric's columns even if a helper formula runs further down. Those rows are filled in place rather than inserted, so formulas filled down beside the data stay on the rows they refer to; the sheet only grows when the block reaches its last row. Rows left blank across all metric columns (for example data cleared by hand) are ignored when reading. The tab list is fetched once per run and a header verified while reading is not re-read before appending.
+**Layout.** Each metric owns one tab named exactly after the metric, with the metric's columns as the header row starting at column A. The tab and header are created on the first write; an existing tab's first cells must match the metric's columns exactly (a blank first row above data counts as a mismatch), otherwise the run fails before writing anything. The metric only ever reads and writes its own block of columns, so you can add helper columns and formulas to the right of the data: they are ignored by the header check, and new rows are written directly under the last row that has data in the metric's columns even if a helper formula runs further down. Those rows are filled in place rather than inserted, so formulas filled down beside the data stay on the rows they refer to; the sheet only grows when the block reaches its last row. Rows left blank across all metric columns (for example data cleared by hand) are ignored when reading. A snapshot metric clears only its own block below the header before writing, so helper columns survive that too. The tab list is fetched once per run and a header verified while reading is not re-read before writing.
 
 **Encoding.** Rows are written with the `RAW` input option, so Sheets never reinterprets text: a release named `6.5` stays text and a value beginning with `=` is never treated as a formula. Date-time cells are the one exception. They are written as native Sheets serial numbers, and any column that holds one in the rows being written is given the number format `yyyy-mm-dd hh:mm:ss` after every write (rows added at the end of the sheet by an append do not inherit column formatting), so they sort, filter and chart as dates and read back as exactly the text the metric wrote. Blank cells read back as `null`; every other value reads back as text, which is why metrics compare ids as strings.
 
@@ -87,7 +87,7 @@ Console output is human-readable at `info` level (`debug` with `--verbose`). Eve
    1. Read the rows already in the metric's sheet tab (append metrics only).
    2. Ask the metric to collect: for an **append** metric, only rows newer than what is there (see each metric's rules below); for a **snapshot** metric, the complete current picture.
    3. Validate every row has exactly the metric's columns.
-   4. Append metrics add their rows below the existing ones, oldest first, and write nothing when there is nothing new. Snapshot metrics clear everything below the header in their own columns and write the new rows, so their tab always shows the latest state and may legitimately end up empty.
+   4. Append metrics add their rows below the existing ones, oldest first, and write nothing when there is nothing new. Snapshot metrics clear everything below the header in their own columns and write the new rows, so their tab always shows the latest state and may legitimately end up empty. The clear and the write are separate API calls: if the write fails, the tab stays empty (and the run exits non-zero) until the next successful run.
 4. A failure in one metric is logged and does not stop the others. The process exits non-zero if any failed.
 
 ## Repository discovery
@@ -199,7 +199,7 @@ where column `A` of the summary holds the team and `B` the week start; swap `0.5
 
 ## Adding a metric
 
-1. Create `src/metrics/<name>/` with a factory that returns a `Metric` (see `src/core/metric.ts`): a name, description, ordered `columns`, and a `collect` function that receives the existing rows and returns only new ones, oldest first. A metric that reads GitHub repositories gets them from `repos.list()` inside `collect`, never at construction time, so `metrics list` stays offline and discovery runs once per run.
+1. Create `src/metrics/<name>/` with a factory that returns a `Metric` (see `src/core/metric.ts`): a name, description, ordered `columns`, and a `collect` function. An append metric (the default) receives the existing rows and returns only new ones, oldest first; a snapshot metric (`mode: "snapshot"`) receives no existing rows and returns the complete current picture, which replaces its tab. Both receive `full`, which append metrics honour by ignoring their watermark. A metric that reads GitHub repositories gets them from `repos.list()` inside `collect`, never at construction time, so `metrics list` stays offline and discovery runs once per run.
 2. Register the factory in `src/metrics/index.ts`.
 3. Add unit tests for the transform and the delta logic against fakes of the source.
 4. Document the metric's source, columns, and exclusion rules in this README.
