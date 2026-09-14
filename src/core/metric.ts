@@ -12,18 +12,37 @@ export type MetricRow = Readonly<Record<string, CellValue>>;
 
 export interface CollectContext {
   /**
-   * Rows already present in the metric's sheet, oldest first. Metrics use this
-   * to derive their watermark and to avoid re-emitting rows they have already
-   * written. Empty on a first run, which means a full backfill.
+   * Rows already present in the metric's sheet, oldest first. Append metrics
+   * use this to derive their watermark and to avoid re-emitting rows they have
+   * already written. Empty on a first run, which means a full backfill, and
+   * always empty for snapshot metrics.
    */
   readonly existingRows: readonly MetricRow[];
+  /**
+   * True when the user passed `--full`: re-check everything from the configured
+   * start date instead of stopping at the watermark. Rows already in the sheet
+   * must still be skipped.
+   */
+  readonly full: boolean;
   readonly logger: Logger;
 }
 
 /**
+ * How a metric's rows relate to what is already in its tab.
+ *
+ * - `append` (default): `collect` returns only new rows, which are added below
+ *   the existing ones. History accumulates.
+ * - `snapshot`: `collect` returns the complete current picture, which replaces
+ *   everything below the header. The tab always shows the latest state and may
+ *   legitimately become empty.
+ */
+export type MetricMode = "append" | "snapshot";
+
+/**
  * A metric knows where its data comes from and how to turn it into rows.
  * It is deliberately unaware of Google Sheets: the runner reads existing rows
- * from the sink, hands them to `collect`, and appends whatever comes back.
+ * from the sink, hands them to `collect`, and writes whatever comes back
+ * according to the metric's `mode`.
  *
  * `name` doubles as the sheet tab name.
  */
@@ -32,7 +51,9 @@ export interface Metric {
   readonly description: string;
   /** Ordered column headers. Rows returned by `collect` must use exactly these keys. */
   readonly columns: readonly string[];
-  /** Returns only rows that are not yet in the sink, ordered oldest first. */
+  /** Defaults to `append`. */
+  readonly mode?: MetricMode;
+  /** Returns the rows to write, ordered oldest first (see `MetricMode` for what "the rows" means). */
   collect(context: CollectContext): Promise<MetricRow[]>;
 }
 

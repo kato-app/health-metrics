@@ -21,6 +21,8 @@ export interface SpreadsheetClient {
    * the blank cells below the block, growing the sheet only when it runs out.
    */
   appendValues(tab: string, range: string, values: readonly (readonly Cell[])[]): Promise<void>;
+  /** Blanks every cell in `range` (A1 notation within the tab), leaving formatting in place. */
+  clearValues(tab: string, range: string): Promise<void>;
   /** Creates an empty tab and returns its sheet id. */
   addTab(title: string): Promise<number>;
   /** Applies a date-time number format to whole columns (zero-based indexes), skipping the header row. */

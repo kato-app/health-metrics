@@ -31,7 +31,7 @@ const options: CollectOptions = {
   startStatuses: ["In Progress"],
   excludedResolutions: ["Won't Do", "Duplicate", "Cannot Reproduce"],
 };
-const ctx = (existingRows: MetricRow[] = []) => ({ existingRows, logger: noopLogger });
+const ctx = (existingRows: MetricRow[] = []) => ({ existingRows, full: false, logger: noopLogger });
 
 const prUrl = (repo: string, n: number) => `https://github.com/kato-app/${repo}/pull/${n}`;
 const note = (repo: string, n: number, title: string) => `* ${title} by @x in ${prUrl(repo, n)}`;
@@ -178,7 +178,7 @@ describe("collectCycleTime", () => {
     const jira = new FakeJiraSource([]);
     const logger = warnRecorder();
 
-    await collectCycleTime({ jira, github: github() }, options, { existingRows: [{ released_at: "yesterday", issue_key: "GR-1" }], logger });
+    await collectCycleTime({ jira, github: github() }, options, { full: false, existingRows: [{ released_at: "yesterday", issue_key: "GR-1" }], logger });
 
     assert.match(jira.queries[0]!, /resolved >= "2026-01-01"/);
     assert.deepEqual(logger.lines.map((l) => l.context?.existingRows), [1]);
@@ -284,7 +284,7 @@ describe("collectCycleTime data-quality warnings", () => {
     });
     const jira = new FakeJiraSource([startedAfterRelease], { "1": [linkedPullRequest(prUrl("kato", 10))] });
 
-    const rows = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], logger });
+    const rows = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], full: false, logger });
 
     assert.equal(rows[0]?.cycle_time_days, -9);
     assert.deepEqual(

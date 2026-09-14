@@ -8,8 +8,12 @@
   "jira": {
     "projects": [
       { "key": "AT", "team": "Atlas" },
+      { "key": "AWA", "team": "Kato Web App" },
       { "key": "CW", "team": "Kato Core" },
-      { "key": "GR", "team": "Kato Growth" }
+      { "key": "DT", "team": "Data Core" },
+      { "key": "GR", "team": "Kato Growth" },
+      { "key": "KC", "team": "Kato Core (2)" },
+      { "key": "PE", "team": "Platform" }
     ]
   },
   "logging": {

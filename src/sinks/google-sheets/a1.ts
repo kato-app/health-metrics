@@ -16,3 +16,8 @@ export function columnsRange(count: number): string {
 export function headerRange(count: number): string {
   return `A1:${columnLetter(count - 1)}1`;
 }
+
+/** Everything below the header in the first `count` columns, e.g. `A2:H`. */
+export function bodyRange(count: number): string {
+  return `A2:${columnLetter(count - 1)}`;
+}

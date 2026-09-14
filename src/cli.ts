@@ -26,6 +26,7 @@ const offlineJira: JiraSource = { searchIssues: offline, listStatusCategories: o
 interface RunCommandOptions {
   all?: boolean;
   dryRun?: boolean;
+  full?: boolean;
   verbose?: boolean;
 }
 
@@ -70,7 +71,7 @@ async function runCommand(name: string | undefined, opts: RunCommandOptions): Pr
     const jira = createJiraClient({ baseUrl: env.ATLASSIAN_BASE_URL, email: env.ATLASSIAN_EMAIL, token: env.ATLASSIAN_TOKEN, logger });
     const metrics = selectMetrics(createMetrics({ config, logger, github, repos, jira }), name, opts.all);
     const sink = createSink(config, env, logger);
-    const results = await runMetrics(metrics, { sink, logger, dryRun: opts.dryRun ?? false });
+    const results = await runMetrics(metrics, { sink, logger, dryRun: opts.dryRun ?? false, full: opts.full ?? false });
 
     const succeeded = results.filter((r) => r.status === "ok");
     logger.info("Run complete", {
@@ -115,6 +116,7 @@ program
   .argument("[name]", "metric name, as shown by `metrics list`")
   .option("-a, --all", "run every registered metric")
   .option("-n, --dry-run", "collect and log rows without writing to the sheet")
+  .option("-f, --full", "re-check everything from the configured start date instead of only what is newer than the sheet")
   .option("-v, --verbose", "print debug-level logs to the console")
   .action(async (name: string | undefined, opts: RunCommandOptions) => {
     process.exitCode = await runCommand(name, opts);

@@ -85,6 +85,7 @@ export class FakeGitHubSource implements GitHubSource {
 export class InMemorySink implements MetricSink {
   readonly tabs = new Map<string, MetricRow[]>();
   readonly appendCalls: { metric: string; rows: readonly MetricRow[] }[] = [];
+  readonly replaceCalls: { metric: string; rows: readonly MetricRow[] }[] = [];
 
   seed(metricName: string, rows: MetricRow[]): void {
     this.tabs.set(metricName, [...rows]);
@@ -97,6 +98,11 @@ export class InMemorySink implements MetricSink {
   async appendRows(metric: Metric, rows: readonly MetricRow[]): Promise<void> {
     this.appendCalls.push({ metric: metric.name, rows });
     this.tabs.set(metric.name, [...(this.tabs.get(metric.name) ?? []), ...rows]);
+  }
+
+  async replaceRows(metric: Metric, rows: readonly MetricRow[]): Promise<void> {
+    this.replaceCalls.push({ metric: metric.name, rows });
+    this.tabs.set(metric.name, [...rows]);
   }
 }
 

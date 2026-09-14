@@ -7,33 +7,36 @@ export interface RunOptions {
   readonly logger: Logger;
   /** Collect and log rows, but do not write them to the sink. */
   readonly dryRun: boolean;
+  /** Re-check everything from the configured start date instead of stopping at the watermark. */
+  readonly full: boolean;
 }
 
 export type MetricRunResult =
   | {
       readonly metric: string;
       readonly status: "ok";
-      /** New rows the metric produced. */
+      /** Rows the metric produced. */
       readonly rowsCollected: number;
-      /** Rows actually appended to the sink; zero in a dry run. */
+      /** Rows actually written to the sink; zero in a dry run. */
       readonly rowsWritten: number;
     }
   | { readonly metric: string; readonly status: "failed"; readonly error: unknown };
 
 /**
- * Runs a single metric end to end: read existing rows, collect the delta,
- * validate it, append it. Never throws; failures are returned so callers can
- * decide how to aggregate them.
+ * Runs a single metric end to end: read existing rows (append metrics only),
+ * collect, validate, write according to the metric's mode. Never throws;
+ * failures are returned so callers can decide how to aggregate them.
  */
 export async function runMetric(metric: Metric, options: RunOptions): Promise<MetricRunResult> {
   const logger = options.logger.child({ metric: metric.name });
+  const mode = metric.mode ?? "append";
   try {
-    logger.info("Starting metric run", { dryRun: options.dryRun });
+    logger.info("Starting metric run", { mode, dryRun: options.dryRun, full: options.full });
 
-    const existingRows = await options.sink.readRows(metric);
-    logger.debug("Read existing rows", { count: existingRows.length });
+    const existingRows = mode === "append" ? await options.sink.readRows(metric) : [];
+    if (mode === "append") logger.debug("Read existing rows", { count: existingRows.length });
 
-    const rows = await metric.collect({ existingRows, logger });
+    const rows = await metric.collect({ existingRows, full: options.full, logger });
     for (const row of rows) assertRowShape(metric, row);
 
     const ok = (rowsWritten: number): MetricRunResult => ({
@@ -43,17 +46,22 @@ export async function runMetric(metric: Metric, options: RunOptions): Promise<Me
       rowsWritten,
     });
 
+    if (options.dryRun) {
+      for (const row of rows) logger.info("Would write row", { row });
+      logger.info(mode === "append" ? "Dry run complete; nothing written" : "Dry run complete; tab would be replaced", { rows: rows.length });
+      return ok(0);
+    }
+
+    if (mode === "snapshot") {
+      await options.sink.replaceRows(metric, rows);
+      logger.info("Replaced tab contents", { rows: rows.length });
+      return ok(rows.length);
+    }
+
     if (rows.length === 0) {
       logger.info("No new rows");
       return ok(0);
     }
-
-    if (options.dryRun) {
-      for (const row of rows) logger.info("Would write row", { row });
-      logger.info("Dry run complete; nothing written", { rows: rows.length });
-      return ok(0);
-    }
-
     await options.sink.appendRows(metric, rows);
     logger.info("Wrote rows", { rows: rows.length });
     return ok(rows.length);

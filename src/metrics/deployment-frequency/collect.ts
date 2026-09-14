@@ -39,7 +39,7 @@ export async function collectDeploymentFrequency(
 ): Promise<MetricRow[]> {
   const { logger, existingRows } = context;
   const startDate = startOfUtcDay(options.startDate);
-  const watermark = findWatermark(existingRows);
+  const watermark = context.full ? undefined : findWatermark(existingRows);
   if (!watermark && existingRows.length > 0) {
     logger.warn("Existing rows have no readable published_at; backfilling from the start date", {
       existingRows: existingRows.length,

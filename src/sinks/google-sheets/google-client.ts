@@ -95,6 +95,10 @@ export function createGoogleSheetsClient(options: GoogleClientOptions): Spreadsh
       );
     },
 
+    async clearValues(tab, range) {
+      await call(() => api.spreadsheets.values.clear({ spreadsheetId, range: tabRange(tab, range) }));
+    },
+
     async addTab(title) {
       const response = await batchUpdate([{ addSheet: { properties: { title } } }]);
       const sheetId = response.replies?.[0]?.addSheet?.properties?.sheetId;

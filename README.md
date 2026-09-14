@@ -41,8 +41,11 @@ npm run metrics -- list                         # show registered metrics
 npm run metrics -- run <name>                   # collect one metric and write new rows
 npm run metrics -- run --all                    # collect every metric; each runs independently
 npm run metrics -- run <name> --dry-run         # collect and log rows without writing
+npm run metrics -- run <name> --full            # re-check everything since startDate, not just what is newer than the sheet
 npm run metrics -- run --all --verbose          # debug-level console output
 ```
+
+`--full` ignores each metric's watermark and re-evaluates from `startDate`. Rows already in the sheet are still skipped by id or key, so it cannot create duplicates; it exists to pick up anything a normal run's window missed, at the cost of a first-run-sized set of API calls.
 
 Exit code is `0` when every selected metric succeeded and `1` if any failed or the run could not start.
 
@@ -81,10 +84,10 @@ Console output is human-readable at `info` level (`debug` with `--verbose`). Eve
 1. Load and validate `config.json` and `.env`. Invalid or missing values abort before anything is contacted.
 2. Resolve the requested metric(s) from the registry in `src/metrics/index.ts`.
 3. For each metric, in turn:
-   1. Read the rows already in the metric's sheet tab.
-   2. Ask the metric to collect only rows newer than what is there (see each metric's rules below).
+   1. Read the rows already in the metric's sheet tab (append metrics only).
+   2. Ask the metric to collect: for an **append** metric, only rows newer than what is there (see each metric's rules below); for a **snapshot** metric, the complete current picture.
    3. Validate every row has exactly the metric's columns.
-   4. Append the rows to the tab, oldest first. A metric with no new rows writes nothing.
+   4. Append metrics add their rows below the existing ones, oldest first, and write nothing when there is nothing new. Snapshot metrics clear everything below the header in their own columns and write the new rows, so their tab always shows the latest state and may legitimately end up empty.
 4. A failure in one metric is logged and does not stop the others. The process exits non-zero if any failed.
 
 ## Repository discovery

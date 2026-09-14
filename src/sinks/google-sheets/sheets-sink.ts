@@ -2,7 +2,7 @@ import type { CellValue, Metric, MetricRow } from "../../core/metric.js";
 import { SHEET_DATE_PATTERN, parseSheetDate, toSheetSerial } from "../../core/sheet-date.js";
 import type { MetricSink } from "../../core/sink.js";
 import type { Logger } from "../../logging/logger.js";
-import { columnsRange, headerRange } from "./a1.js";
+import { bodyRange, columnsRange, headerRange } from "./a1.js";
 import type { Cell, SpreadsheetClient } from "./spreadsheet-client.js";
 
 /**
@@ -84,15 +84,27 @@ export function createSheetsSink(client: SpreadsheetClient, logger: Logger): Met
     async appendRows(metric, rows) {
       if (rows.length === 0) return;
       const sheetId = await ensureTabWithHeader(metric);
-      await client.appendValues(metric.name, columnsRange(metric.columns.length), rows.map((row) => encodeRow(metric, row)));
+      await writeBelowHeader(metric, sheetId, rows);
+    },
 
-      // Rows added at the end of the sheet by an append do not inherit column
-      // formatting, so re-apply it to the whole column after every write.
-      // Idempotent and one API call.
-      const dateColumns = metric.columns.flatMap((c, i) => (rows.some((row) => parseSheetDate(row[c])) ? [i] : []));
-      await client.formatDateTimeColumns(sheetId, dateColumns, SHEET_DATE_PATTERN);
+    async replaceRows(metric, rows) {
+      const sheetId = await ensureTabWithHeader(metric);
+      await client.clearValues(metric.name, bodyRange(metric.columns.length));
+      log.info("Cleared tab below header", { tab: metric.name });
+      if (rows.length > 0) await writeBelowHeader(metric, sheetId, rows);
     },
   };
+
+  /** Appends encoded rows under the block's last data row and keeps date columns formatted. */
+  async function writeBelowHeader(metric: Metric, sheetId: number, rows: readonly MetricRow[]): Promise<void> {
+    await client.appendValues(metric.name, columnsRange(metric.columns.length), rows.map((row) => encodeRow(metric, row)));
+
+    // Rows added at the end of the sheet by an append do not inherit column
+    // formatting, so re-apply it to the whole column after every write.
+    // Idempotent and one API call.
+    const dateColumns = metric.columns.flatMap((c, i) => (rows.some((row) => parseSheetDate(row[c])) ? [i] : []));
+    await client.formatDateTimeColumns(sheetId, dateColumns, SHEET_DATE_PATTERN);
+  }
 }
 
 export function encodeCell(value: CellValue): Cell {

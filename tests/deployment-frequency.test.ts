@@ -12,7 +12,7 @@ import { FakeGitHubSource, FakeJiraSource, release, validConfig } from "./helper
 const kato = { owner: "kato-app", name: "kato" };
 const settings = { owner: "kato-app", name: "kato-settings" };
 const options = { repos: [kato, settings], startDate: "2026-01-01" };
-const ctx = (existingRows: readonly MetricRow[] = []) => ({ existingRows, logger: noopLogger });
+const ctx = (existingRows: readonly MetricRow[] = []) => ({ existingRows, full: false, logger: noopLogger });
 
 describe("sheet dates", () => {
   it("formats ISO timestamps as UTC 'YYYY-MM-DD HH:MM:SS'", () => {

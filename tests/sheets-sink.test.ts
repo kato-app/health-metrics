@@ -80,6 +80,14 @@ class InMemorySpreadsheet implements SpreadsheetClient {
     t.rows.splice(insertAt, values.length, ...values.map((row, i) => [...row, ...(t.rows[insertAt + i]?.slice(row.length) ?? [])]));
   }
 
+  async clearValues(tab: string, range: string) {
+    this.calls.push(`clearValues:${tab}:${range}`);
+    const t = this.tabs.get(tab);
+    if (!t) throw new Error(`Unable to parse range: ${tab}`);
+    const { columns, rowsFrom, rowsTo } = parseRange(range);
+    for (const row of t.rows.slice(rowsFrom, rowsTo)) for (let c = 0; c < Math.min(columns, row.length); c += 1) row[c] = "";
+  }
+
   async addTab(title: string) {
     this.calls.push(`addTab:${title}`);
     const sheetId = this.nextId++;
@@ -306,5 +314,45 @@ describe("SheetsSink.appendRows", () => {
     const sheet = new InMemorySpreadsheet();
     await createSheetsSink(sheet, noopLogger).appendRows(metric, []);
     assert.deepEqual(sheet.calls, []);
+  });
+});
+
+describe("SheetsSink.replaceRows", () => {
+  it("clears everything below the header within the block and writes the new rows from row 2", async () => {
+    const sheet = new InMemorySpreadsheet({
+      deploys: [
+        [...HEADER, "Notes"],
+        ["2026-03-01 10:00:00", "kato-app/kato", "100", "v1", "keep me"],
+        ["2026-03-02 10:00:00", "kato-app/kato", "200", "v2", "and me"],
+      ],
+    });
+    const sink = createSheetsSink(sheet, noopLogger);
+
+    await sink.replaceRows(metric, [{ ...row2, id: 300 }]);
+
+    const tab = sheet.tabs.get("deploys")!;
+    assert.deepEqual(tab.rows[0], [...HEADER, "Notes"]);
+    assert.deepEqual(tab.rows[1]?.slice(0, 4), [toSheetSerial(new Date("2026-03-02T10:00:00Z")), "kato-app/kato", 300, ""]);
+    assert.equal(tab.rows[1]?.[4], "keep me", "columns outside the block are untouched");
+    assert.deepEqual(tab.rows[2]?.slice(0, 4), ["", "", "", ""], "old second row is gone");
+    assert.ok(sheet.calls.includes("clearValues:deploys:A2:D"));
+    assert.deepEqual((await sink.readRows(metric)).map((r) => r.id), ["300"]);
+  });
+
+  it("leaves only the header when given no rows, creating the tab if needed", async () => {
+    const sheet = new InMemorySpreadsheet();
+    const sink = createSheetsSink(sheet, noopLogger);
+
+    await sink.replaceRows(metric, []);
+
+    assert.deepEqual(sheet.tabs.get("deploys")?.rows, [HEADER]);
+    assert.equal(sheet.calls.filter((c) => c.startsWith("appendValues")).length, 1, "header only");
+    assert.deepEqual(await sink.readRows(metric), []);
+  });
+
+  it("refuses to replace under a mismatched header", async () => {
+    const sheet = new InMemorySpreadsheet({ deploys: [["date", "repo", "id", "name"], ["x", "y", "z", "w"]] });
+    await assert.rejects(createSheetsSink(sheet, noopLogger).replaceRows(metric, [row1]), /has columns \[date/);
+    assert.equal(sheet.tabs.get("deploys")?.rows[1]?.[0], "x", "nothing cleared");
   });
 });

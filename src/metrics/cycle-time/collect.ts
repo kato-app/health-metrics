@@ -62,7 +62,7 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
   const { jira, github } = sources;
   const { logger, existingRows } = context;
   const startDate = startOfUtcDay(options.startDate);
-  const watermark = newestSheetDate(existingRows, "released_at");
+  const watermark = context.full ? undefined : newestSheetDate(existingRows, "released_at");
   if (!watermark && existingRows.length > 0) {
     logger.warn("Existing rows have no readable released_at; querying Jira from the start date", { existingRows: existingRows.length });
   }
