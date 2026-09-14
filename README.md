@@ -171,6 +171,8 @@ One row per Jira issue that has been **delivered to production**, for the projec
 | `cycle_time_days` | `released_at − started_at` in calendar days. Blank when `started_at` is blank. |
 | `lead_time_days` | `released_at − created_at` in calendar days. |
 
+**Which pull requests count.** Jira links a pull request to every issue mentioned in its commits or description, so a follow-up under another ticket can attach itself to an issue months later and drag its release date forward. The metric therefore uses only the linked pull requests whose branch name or title names the issue's own key (any case, any separator). If none of them do, it falls back to everything Jira linked, since some teams put the key in commit messages alone. When a linked pull request is dropped because it names a different configured issue, the run logs a warning with both keys.
+
 **Exclusion and deferral rules.** An issue produces no row when it:
 
 - is a sub-task (its parent is measured instead);

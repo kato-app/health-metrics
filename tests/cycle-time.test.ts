@@ -303,3 +303,44 @@ describe("collectCycleTime data-quality warnings", () => {
     );
   });
 });
+
+describe("collectCycleTime pull request attribution", () => {
+  it("ends at the release of the pull requests that name the issue, ignoring linked follow-ups under other tickets, and warns", async () => {
+    const logger = warnRecorder();
+    // GR-1's own PR shipped in kato v1 (2026-02-11); a CW-9 follow-up that mentions GR-1 shipped later in kato-settings s1 (2026-02-15).
+    const jira = new FakeJiraSource([jiraIssue({ key: "GR-1" })], {
+      "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "gr-1-first"), linkedPullRequest(prUrl("kato-settings", 5), "MERGED", "CW-9-follow-up", "CW-9 follow up")],
+    });
+
+    const [row] = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], full: false, logger });
+
+    assert.equal(row?.released_at, "2026-02-11 10:00:00");
+    assert.equal(row?.pr_count, 1);
+    assert.equal(row?.release_tags, "kato@v1");
+    assert.deepEqual(
+      logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).map((l) => l.context?.ignored),
+      [["kato-app/kato-settings#5 (CW-9)"]],
+    );
+  });
+
+  it("falls back to every linked pull request when none names the issue", async () => {
+    const jira = new FakeJiraSource([jiraIssue({ key: "GR-1" })], { "1": [linkedPullRequest(prUrl("kato", 10)), linkedPullRequest(prUrl("kato-settings", 5))] });
+
+    const [row] = await collectCycleTime({ jira, github: github() }, options, ctx());
+
+    assert.equal(row?.released_at, "2026-02-15 10:00:00");
+    assert.equal(row?.pr_count, 2);
+  });
+
+  it("does not warn when the ignored pull requests carry no other configured key", async () => {
+    const logger = warnRecorder();
+    const jira = new FakeJiraSource([jiraIssue({ key: "GR-1" })], {
+      "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "GR-1-first"), linkedPullRequest(prUrl("kato-settings", 5), "MERGED", "hotfix-loader")],
+    });
+
+    const [row] = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], full: false, logger });
+
+    assert.equal(row?.pr_count, 1);
+    assert.equal(logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).length, 0);
+  });
+});

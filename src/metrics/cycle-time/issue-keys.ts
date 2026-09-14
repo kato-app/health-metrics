@@ -27,3 +27,17 @@ function projectPattern(key: string): string {
     })
     .join("");
 }
+
+/**
+ * Whether `text` (a branch name or title) names this exact issue, e.g.
+ * `AWA-9892`, `awa-9892-fix-thing` or `Awa 9892 fix`. Unlike `extractIssueKeys`
+ * the match is fully case-insensitive: the key is known, so there is no risk
+ * of an English word being mistaken for a project.
+ */
+export function mentionsIssueKey(text: string | null | undefined, issueKey: string): boolean {
+  if (!text) return false;
+  const [project, number] = issueKey.split("-");
+  if (!project || !number) return false;
+  const escaped = project.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(String.raw`(?<![A-Za-z0-9])${escaped}[-_ ]?${number}(?!\d)`, "i").test(text);
+}

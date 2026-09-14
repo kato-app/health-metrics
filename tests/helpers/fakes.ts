@@ -172,8 +172,8 @@ export function jiraIssue(overrides: Partial<JiraIssue> & { key: string }): Jira
 }
 
 /** A pull request as Jira's development panel reports it. */
-export function linkedPullRequest(url: string, status = "MERGED", sourceBranch: string | null = null): LinkedPullRequest {
-  return { url, title: null, status, sourceBranch, lastUpdate: new Date("2026-02-09T12:00:00Z") };
+export function linkedPullRequest(url: string, status = "MERGED", sourceBranch: string | null = null, title: string | null = null): LinkedPullRequest {
+  return { url, title, status, sourceBranch, lastUpdate: new Date("2026-02-09T12:00:00Z") };
 }
 
 /**

@@ -2,7 +2,9 @@ import type { JiraProject } from "../../config/schema.js";
 import { compareRows, type CollectContext, type MetricRow } from "../../core/metric.js";
 import { MS_PER_DAY, newestSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
 import { parsePullRequestUrl, pullRequestKey, repoFullName, type GitHubSource, type PullRequestRef, type RepoRef } from "../../sources/github/source.js";
+import type { Logger } from "../../logging/logger.js";
 import type { JiraIssue, JiraSource, LinkedPullRequest } from "../../sources/jira/source.js";
+import { extractIssueKeys, mentionsIssueKey } from "./issue-keys.js";
 import { buildReleaseIndex, type ReleaseRef } from "./release-index.js";
 import { findDoneAt, findStartedAt, toRow, type DeliveredIssue } from "./transform.js";
 import { reportUnlinkedPullRequests } from "./unlinked.js";
@@ -40,13 +42,44 @@ type Skip = "subtask" | "excludedResolution" | "alreadyInSheet" | "noMergedPullR
  * excluding declined ones. Jira reports OPEN, MERGED or DECLINED; anything
  * else it may add (a draft, say) counts as not merged yet.
  */
-function relevantPullRequests(linked: readonly LinkedPullRequest[], repos: readonly RepoRef[]): { ref: PullRequestRef; status: string }[] {
+interface CandidatePullRequest {
+  readonly ref: PullRequestRef;
+  readonly status: string;
+  readonly title: string | null;
+  readonly sourceBranch: string | null;
+}
+
+function relevantPullRequests(linked: readonly LinkedPullRequest[], repos: readonly RepoRef[]): CandidatePullRequest[] {
   const known = new Set(repos.map(repoFullName));
   return linked.flatMap((pr) => {
     const ref = parsePullRequestUrl(pr.url);
     if (!ref || !known.has(repoFullName(ref.repo)) || pr.status === "DECLINED") return [];
-    return [{ ref, status: pr.status }];
+    return [{ ref, status: pr.status, title: pr.title, sourceBranch: pr.sourceBranch }];
   });
+}
+
+/**
+ * Jira links a pull request to every issue its commits or description mention,
+ * so follow-up work under another ticket can attach itself months later and
+ * drag this issue's release date forward. Prefer the pull requests whose
+ * branch or title name this issue; only if none do, fall back to everything
+ * Jira linked (some teams put the key in commit messages alone).
+ */
+function ownPullRequests(issue: JiraIssue, candidates: readonly CandidatePullRequest[], projectKeys: readonly string[], logger: Logger): CandidatePullRequest[] {
+  const named = candidates.filter((pr) => mentionsIssueKey(pr.sourceBranch, issue.key) || mentionsIssueKey(pr.title, issue.key));
+  if (named.length === 0) return [...candidates];
+
+  const others = candidates
+    .filter((pr) => !named.includes(pr))
+    .map((pr) => ({ pr, keys: extractIssueKeys(`${pr.title ?? ""} ${pr.sourceBranch ?? ""}`, projectKeys).filter((k) => k !== issue.key) }))
+    .filter(({ keys }) => keys.length > 0);
+  if (others.length > 0) {
+    logger.warn("Ignoring linked pull requests that belong to other issues", {
+      issue: issue.key,
+      ignored: others.map(({ pr, keys }) => `${pullRequestKey(pr.ref)} (${keys.join(", ")})`),
+    });
+  }
+  return named;
 }
 
 function latest(dates: readonly Date[]): Date {
@@ -66,6 +99,7 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
   const resolvedSince = watermark ? new Date(Math.max(startDate.getTime(), watermark.getTime() - graceMs)) : startDate;
   const knownKeys = new Set(existingRows.map((row) => String(row.issue_key)));
   const teams = new Map(options.projects.map((p) => [p.key, p.team]));
+  const projectKeys = options.projects.map((p) => p.key);
   const excludedResolutions = new Set(options.excludedResolutions.map((r) => r.toLowerCase()));
 
   logger.debug("Collecting cycle time", {
@@ -94,7 +128,8 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
     if (issue.resolution && excludedResolutions.has(issue.resolution.toLowerCase())) return skip(issue, "excludedResolution", { resolution: issue.resolution });
     if (knownKeys.has(issue.key)) return skip(issue, "alreadyInSheet");
 
-    const pullRequests = relevantPullRequests(await jira.listLinkedPullRequests(issue.id), options.repos);
+    const linked = relevantPullRequests(await jira.listLinkedPullRequests(issue.id), options.repos);
+    const pullRequests = ownPullRequests(issue, linked, projectKeys, logger);
     const merged = pullRequests.filter((pr) => pr.status === "MERGED");
     const open = pullRequests.filter((pr) => pr.status !== "MERGED");
     if (open.length > 0) return skip(issue, "openPullRequests", { open: open.map((pr) => `${pullRequestKey(pr.ref)} ${pr.status}`) });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { extractIssueKeys } from "../src/metrics/cycle-time/issue-keys.js";
+import { extractIssueKeys, mentionsIssueKey } from "../src/metrics/cycle-time/issue-keys.js";
 
 const PROJECTS = ["AT", "CW", "GR"];
 
@@ -39,5 +39,18 @@ describe("extractIssueKeys", () => {
 
   it("returns nothing when no projects are configured", () => {
     assert.deepEqual(extractIssueKeys("CW-1", []), []);
+  });
+});
+
+describe("mentionsIssueKey", () => {
+  it("matches the exact key in any case and with any separator, but not other numbers or prefixes", () => {
+    assert.equal(mentionsIssueKey("AWA-9892-tenant-confidentiality", "AWA-9892"), true);
+    assert.equal(mentionsIssueKey("awa-9892-fix", "AWA-9892"), true);
+    assert.equal(mentionsIssueKey("Awa 9892 fix", "AWA-9892"), true);
+    assert.equal(mentionsIssueKey("AWA-98921 other", "AWA-9892"), false);
+    assert.equal(mentionsIssueKey("XAWA-9892", "AWA-9892"), false);
+    assert.equal(mentionsIssueKey("CW-139: Resurface dropdown", "AWA-9892"), false);
+    assert.equal(mentionsIssueKey(null, "AWA-9892"), false);
+    assert.equal(mentionsIssueKey("AWA-9892", "not-a-key-"), false);
   });
 });
