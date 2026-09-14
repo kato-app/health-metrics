@@ -47,10 +47,13 @@ describe("mentionsIssueKey", () => {
     assert.equal(mentionsIssueKey("AWA-9892-tenant-confidentiality", "AWA-9892"), true);
     assert.equal(mentionsIssueKey("awa-9892-fix", "AWA-9892"), true);
     assert.equal(mentionsIssueKey("Awa 9892 fix", "AWA-9892"), true);
+    assert.equal(mentionsIssueKey("feature_awa_9892", "AWA-9892"), true);
+    assert.equal(mentionsIssueKey("AWA-9892-1-retry", "AWA-9892"), true, "a numbered suffix is still this issue's branch");
     assert.equal(mentionsIssueKey("AWA-98921 other", "AWA-9892"), false);
+    assert.equal(mentionsIssueKey("AWA-989", "AWA-9892"), false);
     assert.equal(mentionsIssueKey("XAWA-9892", "AWA-9892"), false);
     assert.equal(mentionsIssueKey("CW-139: Resurface dropdown", "AWA-9892"), false);
-    assert.equal(mentionsIssueKey(null, "AWA-9892"), false);
     assert.equal(mentionsIssueKey("AWA-9892", "not-a-key-"), false);
+    assert.equal(mentionsIssueKey("AWA-9892", "AWA-9892-1"), false);
   });
 });

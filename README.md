@@ -165,21 +165,21 @@ One row per Jira issue that has been **delivered to production**, for the projec
 | `started_at` | First move into a status in `jira.startStatuses`, or failing that into any status of Jira's "In Progress" category. Start of cycle time. Blank if neither ever happened. |
 | `done_at` | Last move into a Done-category status in Jira, or the resolution date if the changelog has none. |
 | `last_merged_at` | Merge time of the issue's most recently merged pull request. |
-| `pr_count` | Merged pull requests in collected repositories. |
+| `pr_count` | Merged pull requests in collected repositories that count for the issue (see below). |
 | `repos` | Repositories those pull requests were merged into, comma-separated. |
 | `release_tags` | Releases that shipped them, as `repo@tag`, comma-separated. |
 | `cycle_time_days` | `released_at − started_at` in calendar days. Blank when `started_at` is blank. |
 | `lead_time_days` | `released_at − created_at` in calendar days. |
 
-**Which pull requests count.** Jira links a pull request to every issue mentioned in its commits or description, so a follow-up under another ticket can attach itself to an issue months later and drag its release date forward. The metric therefore uses only the linked pull requests whose branch name or title names the issue's own key (any case, any separator). If none of them do, it falls back to everything Jira linked, since some teams put the key in commit messages alone. When a linked pull request is dropped because it names a different configured issue, the run logs a warning with both keys.
+**Which pull requests count.** Jira links a pull request to every issue mentioned in its commits or description, so a follow-up under another ticket can attach itself to an issue months later and drag its release date forward. The metric therefore uses only the linked pull requests whose branch name or title names the issue's own key (any case, any separator). If none of them do, it falls back to everything Jira linked, since some teams put the key in commit messages alone. A dropped pull request neither ends the cycle nor, while still open, defers the issue. When one is dropped because it names a different configured issue, the run logs a warning listing the pull requests kept and ignored with the other issue's key.
 
 **Exclusion and deferral rules.** An issue produces no row when it:
 
 - is a sub-task (its parent is measured instead);
 - has a resolution listed in `jira.excludedResolutions`;
 - is already in the sheet;
-- still has a pull request that is neither merged nor declined (deferred: it will be measured once everything has merged and shipped);
-- has no merged pull request in a collected repository. Spikes, investigations and non-code tasks therefore never appear. Declined pull requests and pull requests in other repositories are ignored;
+- still has a counted pull request that is neither merged nor declined (deferred: it will be measured once everything has merged and shipped);
+- has no counted, merged pull request in a collected repository. Spikes, investigations and non-code tasks therefore never appear. Declined pull requests and pull requests in other repositories are ignored;
 - has a merged pull request that no published release lists yet (deferred until the release is cut);
 - was released before `startDate`.
 

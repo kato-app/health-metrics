@@ -312,14 +312,28 @@ describe("collectCycleTime pull request attribution", () => {
       "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "gr-1-first"), linkedPullRequest(prUrl("kato-settings", 5), "MERGED", "CW-9-follow-up", "CW-9 follow up")],
     });
 
-    const [row] = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], full: false, logger });
+    const [row] = await collectCycleTime({ jira, github: github() }, options, ctx([], { logger }));
 
     assert.equal(row?.released_at, "2026-02-11 10:00:00");
     assert.equal(row?.pr_count, 1);
     assert.equal(row?.release_tags, "kato@v1");
     assert.deepEqual(
-      logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).map((l) => l.context?.ignored),
-      [["kato-app/kato-settings#5 (CW-9)"]],
+      logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).map((l) => [l.context?.kept, l.context?.ignored]),
+      [[["kato-app/kato#10"], ["kato-app/kato-settings#5 (CW-9)"]]],
+    );
+  });
+
+  it("neither defers the issue for an open pull request under another ticket, nor releases it while its own is open", async () => {
+    const jira = new FakeJiraSource([jiraIssue({ key: "GR-1" }), jiraIssue({ key: "GR-2" })], {
+      "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "gr-1-first"), linkedPullRequest(prUrl("kato", 12), "OPEN", "CW-9-follow-up")],
+      "2": [linkedPullRequest(prUrl("kato", 12), "OPEN", "gr-2-wip"), linkedPullRequest(prUrl("kato", 11), "MERGED", "CW-7-thing")],
+    });
+
+    const rows = await collectCycleTime({ jira, github: github() }, options, ctx());
+
+    assert.deepEqual(
+      rows.map((r) => [r.issue_key, r.released_at, r.pr_count]),
+      [["GR-1", "2026-02-11 10:00:00", 1]],
     );
   });
 
@@ -338,7 +352,7 @@ describe("collectCycleTime pull request attribution", () => {
       "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "GR-1-first"), linkedPullRequest(prUrl("kato-settings", 5), "MERGED", "hotfix-loader")],
     });
 
-    const [row] = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], full: false, logger });
+    const [row] = await collectCycleTime({ jira, github: github() }, options, ctx([], { logger }));
 
     assert.equal(row?.pr_count, 1);
     assert.equal(logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).length, 0);

@@ -30,14 +30,14 @@ function projectPattern(key: string): string {
 
 /**
  * Whether `text` (a branch name or title) names this exact issue, e.g.
- * `AWA-9892`, `awa-9892-fix-thing` or `Awa 9892 fix`. Unlike `extractIssueKeys`
- * the match is fully case-insensitive: the key is known, so there is no risk
- * of an English word being mistaken for a project.
+ * `AWA-9892`, `awa-9892-fix-thing` or `Awa 9892 fix`, but not `AWA-98921` or
+ * `XAWA-9892`. Unlike `extractIssueKeys` the match is fully case-insensitive:
+ * the key is known, so no English word can be mistaken for a project. Keys
+ * come from Jira as `PROJECT-123` (word characters only, so nothing to escape);
+ * any other shape matches nothing.
  */
-export function mentionsIssueKey(text: string | null | undefined, issueKey: string): boolean {
-  if (!text) return false;
-  const [project, number] = issueKey.split("-");
-  if (!project || !number) return false;
-  const escaped = project.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(String.raw`(?<![A-Za-z0-9])${escaped}[-_ ]?${number}(?!\d)`, "i").test(text);
+export function mentionsIssueKey(text: string, issueKey: string): boolean {
+  const key = /^(\w+)-(\d+)$/.exec(issueKey);
+  if (!key) return false;
+  return new RegExp(String.raw`(?<![A-Za-z0-9])${key[1]}[-_ ]?${key[2]}(?!\d)`, "i").test(text);
 }

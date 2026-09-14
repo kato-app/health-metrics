@@ -37,11 +37,7 @@ export interface CollectOptions {
 /** Why an issue produced no row this run. Counted and logged so the gaps are visible. */
 type Skip = "subtask" | "excludedResolution" | "alreadyInSheet" | "noMergedPullRequests" | "openPullRequests" | "unreleasedPullRequests" | "beforeStartDate";
 
-/**
- * Linked pull requests that live in one of the repositories we collect from,
- * excluding declined ones. Jira reports OPEN, MERGED or DECLINED; anything
- * else it may add (a draft, say) counts as not merged yet.
- */
+/** A linked pull request in a collected repository, with the text Jira gives us to attribute it. */
 interface CandidatePullRequest {
   readonly ref: PullRequestRef;
   readonly status: string;
@@ -49,6 +45,11 @@ interface CandidatePullRequest {
   readonly sourceBranch: string | null;
 }
 
+/**
+ * Linked pull requests that live in one of the repositories we collect from,
+ * excluding declined ones. Jira reports OPEN, MERGED or DECLINED; anything
+ * else it may add (a draft, say) counts as not merged yet.
+ */
 function relevantPullRequests(linked: readonly LinkedPullRequest[], repos: readonly RepoRef[]): CandidatePullRequest[] {
   const known = new Set(repos.map(repoFullName));
   return linked.flatMap((pr) => {
@@ -58,28 +59,38 @@ function relevantPullRequests(linked: readonly LinkedPullRequest[], repos: reado
   });
 }
 
+/** Branch name and title, whichever Jira reported. */
+function attributionTexts(pr: CandidatePullRequest): string[] {
+  return [pr.sourceBranch, pr.title].filter((text) => text !== null);
+}
+
 /**
  * Jira links a pull request to every issue its commits or description mention,
  * so follow-up work under another ticket can attach itself months later and
  * drag this issue's release date forward. Prefer the pull requests whose
  * branch or title name this issue; only if none do, fall back to everything
- * Jira linked (some teams put the key in commit messages alone).
+ * Jira linked (some teams put the key in commit messages alone). Applied before
+ * the open/merged split, so a dropped pull request neither ends the cycle nor,
+ * while open, defers the issue. Warns when a dropped pull request names another
+ * configured issue, so the attribution can be checked against both tickets.
  */
-function ownPullRequests(issue: JiraIssue, candidates: readonly CandidatePullRequest[], projectKeys: readonly string[], logger: Logger): CandidatePullRequest[] {
-  const named = candidates.filter((pr) => mentionsIssueKey(pr.sourceBranch, issue.key) || mentionsIssueKey(pr.title, issue.key));
-  if (named.length === 0) return [...candidates];
+function ownPullRequests(issue: JiraIssue, candidates: readonly CandidatePullRequest[], projectKeys: readonly string[], logger: Logger): readonly CandidatePullRequest[] {
+  const own = candidates.filter((pr) => attributionTexts(pr).some((text) => mentionsIssueKey(text, issue.key)));
+  if (own.length === 0) return candidates;
 
-  const others = candidates
-    .filter((pr) => !named.includes(pr))
-    .map((pr) => ({ pr, keys: extractIssueKeys(`${pr.title ?? ""} ${pr.sourceBranch ?? ""}`, projectKeys).filter((k) => k !== issue.key) }))
+  const dropped = candidates
+    .filter((pr) => !own.includes(pr))
+    // Joined on a newline so a key cannot straddle branch and title; a dropped pull request never names `issue.key`.
+    .map((pr) => ({ pr, keys: extractIssueKeys(attributionTexts(pr).join("\n"), projectKeys) }))
     .filter(({ keys }) => keys.length > 0);
-  if (others.length > 0) {
+  if (dropped.length > 0) {
     logger.warn("Ignoring linked pull requests that belong to other issues", {
       issue: issue.key,
-      ignored: others.map(({ pr, keys }) => `${pullRequestKey(pr.ref)} (${keys.join(", ")})`),
+      kept: own.map((pr) => pullRequestKey(pr.ref)),
+      ignored: dropped.map(({ pr, keys }) => `${pullRequestKey(pr.ref)} (${keys.join(", ")})`),
     });
   }
-  return named;
+  return own;
 }
 
 function latest(dates: readonly Date[]): Date {
@@ -110,10 +121,10 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
   });
 
   const [categories, index] = await Promise.all([jira.listStatusCategories(), buildReleaseIndex(github, options.repos, startDate, logger)]);
-  reportUnlinkedPullRequests(index.shipped, watermark, options.projects.map((p) => p.key), logger);
+  reportUnlinkedPullRequests(index.shipped, watermark, projectKeys, logger);
 
   const jql =
-    `project in (${options.projects.map((p) => p.key).join(", ")}) AND statusCategory = Done ` +
+    `project in (${projectKeys.join(", ")}) AND statusCategory = Done ` +
     `AND resolved >= "${resolvedSince.toISOString().slice(0, 10)}" ORDER BY resolved ASC`;
 
   const skips: Record<Skip, number> = { subtask: 0, excludedResolution: 0, alreadyInSheet: 0, noMergedPullRequests: 0, openPullRequests: 0, unreleasedPullRequests: 0, beforeStartDate: 0 };
