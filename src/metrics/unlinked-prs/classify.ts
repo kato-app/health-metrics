@@ -19,12 +19,19 @@ export interface UnlinkedPullRequest {
 }
 
 /**
- * An issue key from a project we do not collect: strict (`AWA-10290`) anywhere
- * in the title, or branch-derived (`Awa 10288 kf availability`) only at the
- * start and with two digits or more, so that "Upgrade to Node 22" and
- * "Phase 2 rollout" are reported as key-less rather than as projects.
+ * An issue key from a project we do not collect, normalised to `KEY-123`:
+ * branch-derived (`Awa 10288 kf availability`) only at the start of the title
+ * and with two digits or more, so that "Upgrade to Node 22" and "Phase 2
+ * rollout" are reported as key-less rather than as projects; strict
+ * (`AWA-10290`) anywhere in the title.
  */
-const OTHER_PROJECT_KEY = /\b([A-Z][A-Z0-9]{1,9})-(\d{1,7})\b|^([A-Z][A-Za-z]{1,9})[-_ ]?(\d{2,7})\b/;
+const BRANCH_DERIVED_KEY = /^([A-Z][A-Za-z]{1,9})[-_ ]?(\d{2,7})\b/;
+const STRICT_KEY = /\b([A-Z][A-Z0-9]{1,9})-(\d{1,7})\b/;
+
+function otherProjectKey(title: string): string | undefined {
+  const match = BRANCH_DERIVED_KEY.exec(title) ?? STRICT_KEY.exec(title);
+  return match ? `${match[1]!.toUpperCase()}-${match[2]}` : undefined;
+}
 
 /**
  * Sorts shipped pull requests into the ones cycle time cannot attribute and why.
@@ -50,13 +57,9 @@ export function classifyUnlinked(
       continue;
     }
 
-    const other = OTHER_PROJECT_KEY.exec(pullRequest.title);
-    if (other) {
-      const key = `${(other[1] ?? other[3])!.toUpperCase()}-${other[2] ?? other[4]}`;
-      result.push({ pullRequest, reason: UNLINKED_REASONS.unknownProject, issueKeys: [key] });
-    } else {
-      result.push({ pullRequest, reason: UNLINKED_REASONS.noKey, issueKeys: [] });
-    }
+    const other = otherProjectKey(pullRequest.title);
+    if (other) result.push({ pullRequest, reason: UNLINKED_REASONS.unknownProject, issueKeys: [other] });
+    else result.push({ pullRequest, reason: UNLINKED_REASONS.noKey, issueKeys: [] });
   }
   return result;
 }

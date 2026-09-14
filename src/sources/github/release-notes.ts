@@ -29,23 +29,34 @@ export function parseReleaseNotes(body: string | null | undefined): ReleaseNoteP
 }
 
 const BRANCH = String.raw`(?:main|release|develop|staging)`;
-const VERSION = String.raw`(?:v\s?)?\d+(?:\.\d+)*`;
 const ARROW = String.raw`(?:=>|->|<-+|to|into)`;
+/** "v77.9", "v 73.31": a version that is unmistakably a tag. */
+const TAGGED_VERSION = String.raw`v\s?\d+(?:\.\d+)*`;
+/** A tag or a bare number such as "77" or "2.25.1". Only trusted when it is (almost) the whole title. */
+const VERSION = String.raw`(?:${TAGGED_VERSION}|\d+(?:\.\d+)*)`;
+/** A single word such as a repository name: "kato", "kato-settings". */
+const WORD = String.raw`[a-z][\w-]*`;
 
 /**
  * Titles of pull requests that exist to move code between long-lived branches
  * or cut a version, which never carry an issue key and are not worth flagging
  * as unlinked. Version titles must be the whole title so that feature work
- * such as "V2 endpoints" is still flagged.
+ * such as "V2 endpoints" is still flagged, and a word followed by a version is
+ * only a version cut when the version carries its "v" ("kato v76.3"), so that
+ * "Node 22" or "Phase 2 release" are still flagged.
  */
 const HOUSEKEEPING_TITLE = new RegExp(
   [
-    String.raw`^(?:merging\s+)?${BRANCH}\s*${ARROW}\s*${BRANCH}\b`, // "Main to Release", "Release => Main v77.10", "Release <-- Main", "Merging Main to Release due to Hotfix"
-    String.raw`^update ${BRANCH} branch (?:with|from) ${BRANCH}\b`, // "Update release branch with main"
-    String.raw`^(?:release(?:\s+(?:for\s+)?${VERSION})?|${VERSION})(?:\s+to\s+${BRANCH})?(?:\s*\(.*\))?$`, // "release", "Release v2.25.1", "Release for v70.7", "Release v4.3 to main", "Release for v70 (Confidentiality)", "v77.9"
-    String.raw`^(?:${VERSION}|[a-z][\w-]*\s+${VERSION})\s+release$`, // "v73.15 Release"
-    String.raw`^[a-z][\w-]*\s+${VERSION}$`, // "kato v76.3": repository name plus version
-    String.raw`^merge (?:pull request|branch)\b`, // GitHub's default title for a merge commit
+    // Branch syncs: "Main to Release", "Release => Main v77.10", "Release <-- Main", "Merging Main to Release due to Hotfix"
+    String.raw`^(?:merging\s+)?${BRANCH}\s*${ARROW}\s*${BRANCH}\b`,
+    // Branch refreshes: "Update release branch with main"
+    String.raw`^update ${BRANCH} branch (?:with|from) ${BRANCH}\b`,
+    // Version cuts: "release", "Release v2.25.1", "Release for v70.7", "Release v4.3 to main", "Release for v70 (Confidentiality)", "v77.9", "2.25.1", "v73.15 Release"
+    String.raw`^(?:release(?:\s+(?:for\s+)?${VERSION})?|${VERSION}(?:\s+release)?)(?:\s+to\s+${BRANCH})?(?:\s*\(.*\))?$`,
+    // Repository name plus tag: "kato v76.3", "kato v76.3 release"
+    String.raw`^${WORD}\s+${TAGGED_VERSION}(?:\s+release)?$`,
+    // GitHub's default title for a merge commit
+    String.raw`^merge (?:pull request|branch)\b`,
   ].join("|"),
   "i",
 );

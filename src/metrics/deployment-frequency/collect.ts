@@ -1,4 +1,4 @@
-import type { CollectContext, MetricRow } from "../../core/metric.js";
+import { compareRows, type CollectContext, type MetricRow } from "../../core/metric.js";
 import { MS_PER_DAY, newestSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
 import { repoFullName, type GitHubSource, type RepoRef } from "../../sources/github/source.js";
 import { toRow } from "./transform.js";
@@ -24,12 +24,6 @@ export interface CollectOptions {
 /** Newest `published_at` already in the sheet, or undefined when none of the rows carries one. */
 export function findWatermark(existingRows: readonly MetricRow[]): Date | undefined {
   return newestSheetDate(existingRows, "published_at");
-}
-
-/** Oldest first. `published_at` is a fixed-width UTC string, so plain comparison orders it chronologically. */
-function byPublishedThenId(a: MetricRow, b: MetricRow): number {
-  if (a.published_at !== b.published_at) return String(a.published_at) < String(b.published_at) ? -1 : 1;
-  return Number(a.id) - Number(b.id);
 }
 
 export async function collectDeploymentFrequency(
@@ -84,5 +78,5 @@ export async function collectDeploymentFrequency(
     repoLogger.info("Collected releases", { seen, added });
   }
 
-  return rows.sort(byPublishedThenId);
+  return rows.sort(compareRows("published_at", "id"));
 }

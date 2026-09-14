@@ -1,5 +1,5 @@
 import type { JiraProject } from "../../config/schema.js";
-import type { CollectContext, MetricRow } from "../../core/metric.js";
+import { compareRows, type CollectContext, type MetricRow } from "../../core/metric.js";
 import { MS_PER_DAY, newestSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
 import { parsePullRequestUrl, pullRequestKey, repoFullName, type GitHubSource, type PullRequestRef, type RepoRef } from "../../sources/github/source.js";
 import type { JiraIssue, JiraSource, LinkedPullRequest } from "../../sources/jira/source.js";
@@ -34,11 +34,6 @@ export interface CollectOptions {
 
 /** Why an issue produced no row this run. Counted and logged so the gaps are visible. */
 type Skip = "subtask" | "excludedResolution" | "alreadyInSheet" | "noMergedPullRequests" | "openPullRequests" | "unreleasedPullRequests" | "beforeStartDate";
-
-function byReleasedThenKey(a: MetricRow, b: MetricRow): number {
-  if (a.released_at !== b.released_at) return String(a.released_at) < String(b.released_at) ? -1 : 1;
-  return String(a.issue_key) < String(b.issue_key) ? -1 : 1;
-}
 
 /**
  * Linked pull requests that live in one of the repositories we collect from,
@@ -152,5 +147,5 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
   }
 
   logger.info("Collected delivered issues", { seen, added: rows.length, withoutStart, skipped: skips });
-  return rows.sort(byReleasedThenKey);
+  return rows.sort(compareRows("released_at", "issue_key"));
 }

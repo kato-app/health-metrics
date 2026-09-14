@@ -139,6 +139,29 @@ describe("JiraClient.searchIssues", () => {
   });
 });
 
+describe("JiraClient.searchIssueKeys", () => {
+  it("requests only the key field, pages like searchIssues and never touches the changelog", async () => {
+    const { fetch, jira } = client({
+      "/rest/api/3/search/jql": (url) =>
+        url.searchParams.get("nextPageToken") === "p2"
+          ? { body: { issues: [{ id: "3", key: "GR-3" }], isLast: true } }
+          : { body: { issues: [{ id: "1", key: "GR-1" }, { id: "2", key: "GR-2" }], nextPageToken: "p2", isLast: false } },
+    });
+
+    const keys = await Array.fromAsync(jira.searchIssueKeys("development[pullrequests].all = 0"));
+
+    assert.deepEqual(keys, ["GR-1", "GR-2", "GR-3"]);
+    assert.deepEqual(fetch.requests.map((u) => u.pathname), ["/rest/api/3/search/jql", "/rest/api/3/search/jql"]);
+    assert.equal(fetch.requests[0]?.searchParams.get("fields"), "key");
+    assert.equal(fetch.requests[0]?.searchParams.has("expand"), false);
+  });
+
+  it("fails rather than silently stopping when a page says it is not last but has no token", async () => {
+    const { jira } = client({ "/rest/api/3/search/jql": () => ({ body: { issues: [{ key: "GR-1" }], isLast: false } }) });
+    await assert.rejects(Array.fromAsync(jira.searchIssueKeys("x")), /no nextPageToken/);
+  });
+});
+
 describe("JiraClient rate limiting", () => {
   const statuses = JSON.stringify([{ id: "1", statusCategory: { key: "new" } }]);
   const rateLimited = (responses: Response[]) => {

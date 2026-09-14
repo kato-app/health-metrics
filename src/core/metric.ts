@@ -69,6 +69,24 @@ export interface MetricDependencies {
 
 export type MetricFactory = (deps: MetricDependencies) => Metric;
 
+/**
+ * Orders rows by the given columns in turn, oldest or smallest first. Numbers
+ * compare numerically; everything else as text, which is chronological for
+ * `formatSheetDate` output because it is fixed-width UTC.
+ */
+export function compareRows(...columns: readonly string[]): (a: MetricRow, b: MetricRow) => number {
+  return (a, b) => {
+    for (const column of columns) {
+      const x = a[column];
+      const y = b[column];
+      if (x === y) continue;
+      if (typeof x === "number" && typeof y === "number") return x - y;
+      return String(x) < String(y) ? -1 : 1;
+    }
+    return 0;
+  };
+}
+
 /** Asserts that a row carries exactly the metric's columns and nothing else. */
 export function assertRowShape(metric: Metric, row: MetricRow): void {
   const actual = new Set(Object.keys(row));

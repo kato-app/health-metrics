@@ -1,5 +1,5 @@
 import type { JiraProject } from "../../config/schema.js";
-import type { CollectContext, MetricRow } from "../../core/metric.js";
+import { compareRows, type CollectContext, type MetricRow } from "../../core/metric.js";
 import { formatSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
 import { repoFullName, type GitHubSource, type RepoRef } from "../../sources/github/source.js";
 import type { JiraSource } from "../../sources/jira/source.js";
@@ -20,7 +20,7 @@ export interface CollectOptions {
   readonly startDate: string;
 }
 
-export function toRow({ pullRequest, reason, issueKeys }: UnlinkedPullRequest): MetricRow {
+function toRow({ pullRequest, reason, issueKeys }: UnlinkedPullRequest): MetricRow {
   const { ref, release } = pullRequest;
   return {
     released_at: formatSheetDate(release.publishedAt),
@@ -33,12 +33,6 @@ export function toRow({ pullRequest, reason, issueKeys }: UnlinkedPullRequest): 
     release_tag: release.tag,
     url: `https://github.com/${ref.repo.owner}/${ref.repo.name}/pull/${ref.number}`,
   };
-}
-
-function byReleasedThenPullRequest(a: MetricRow, b: MetricRow): number {
-  if (a.released_at !== b.released_at) return String(a.released_at) < String(b.released_at) ? -1 : 1;
-  if (a.repo !== b.repo) return String(a.repo) < String(b.repo) ? -1 : 1;
-  return Number(a.pr_number) - Number(b.pr_number);
 }
 
 /**
@@ -56,10 +50,11 @@ export async function collectUnlinkedPullRequests(sources: UnlinkedPrsSources, o
   // the issue's Development panel, so one search finds every issue in scope
   // that has no pull request linked at all.
   const jql = `project in (${projectKeys.join(", ")}) AND development[pullrequests].all = 0 AND updated >= "${options.startDate}"`;
-  const [index, issuesWithoutLinks] = await Promise.all([
+  const [index, keysWithoutLinks] = await Promise.all([
     buildReleaseIndex(sources.github, options.repos, startDate, logger),
-    Array.fromAsync(sources.jira.searchIssueKeys(jql)).then((keys) => new Set(keys)),
+    Array.fromAsync(sources.jira.searchIssueKeys(jql)),
   ]);
+  const issuesWithoutLinks = new Set(keysWithoutLinks);
 
   const unlinked = classifyUnlinked(index.shipped, projectKeys, issuesWithoutLinks);
   const byReason: Record<string, number> = {};
@@ -71,5 +66,5 @@ export async function collectUnlinkedPullRequests(sources: UnlinkedPrsSources, o
     byReason,
   });
 
-  return unlinked.map(toRow).sort(byReleasedThenPullRequest);
+  return unlinked.map(toRow).sort(compareRows("released_at", "repo", "pr_number"));
 }

@@ -1,6 +1,7 @@
 import type { Config } from "../../src/config/schema.js";
 import type { CollectContext, Metric, MetricRow } from "../../src/core/metric.js";
 import type { MetricSink } from "../../src/core/sink.js";
+import type { ShippedPullRequest } from "../../src/metrics/cycle-time/release-index.js";
 import type { JiraIssue, JiraSource, LinkedPullRequest, StatusCategory, StatusTransition } from "../../src/sources/jira/source.js";
 import {
   pullRequestKey,
@@ -79,6 +80,12 @@ export class FakeGitHubSource implements GitHubSource {
       yield r;
     }
   }
+}
+
+/** A pull request from kato-app/kato as the release index lists it, shipped in release `v1`. */
+export function shippedPullRequest(title: string, number: number, publishedAt = "2026-03-01T10:00:00Z", author = "kato-jm"): ShippedPullRequest {
+  const repo = { owner: "kato-app", name: "kato" };
+  return { ref: { repo, number }, title, author, release: { repo, tag: "v1", publishedAt: new Date(publishedAt) } };
 }
 
 /** In-memory sink that records every append and replace. */

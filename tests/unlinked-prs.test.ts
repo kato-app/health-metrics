@@ -4,18 +4,11 @@ import { noopLogger } from "../src/logging/logger.js";
 import { UNLINKED_REASONS, classifyUnlinked } from "../src/metrics/unlinked-prs/classify.js";
 import { COLUMNS, collectUnlinkedPullRequests } from "../src/metrics/unlinked-prs/collect.js";
 import { unlinkedPrs } from "../src/metrics/unlinked-prs/index.js";
-import { FakeGitHubSource, FakeJiraSource, release, validConfig } from "./helpers/fakes.js";
+import { FakeGitHubSource, FakeJiraSource, release, shippedPullRequest as shipped, validConfig } from "./helpers/fakes.js";
 
 const kato = { owner: "kato-app", name: "kato" };
 const settings = { owner: "kato-app", name: "kato-settings" };
 const PROJECTS = ["GR", "CW"];
-
-const shipped = (title: string, n: number, publishedAt = "2026-03-01T10:00:00Z", author = "kato-jm") => ({
-  ref: { repo: kato, number: n },
-  title,
-  author,
-  release: { repo: kato, tag: "v1", publishedAt: new Date(publishedAt) },
-});
 
 describe("classifyUnlinked", () => {
   it("reports key-less, foreign-project and never-linked pull requests, and ignores housekeeping and linked ones", () => {

@@ -47,27 +47,50 @@ describe("parseReleaseNotes", () => {
 });
 
 describe("isHousekeepingPullRequest", () => {
-  it("recognises branch-sync and version-cut pull requests", () => {
-    for (const title of ["Main to Release", "Release => Main  v77.10", "v77.9", "v77", "2.25.1", "Release v2.25.1", "Release 77", "release", "Merge pull request #555 from kato-app/main"]) {
-      assert.ok(isHousekeepingPullRequest(title), title);
-    }
+  it("recognises branch-sync, branch-refresh and version-cut pull requests, including variants seen in the wild", () => {
+    const titles = [
+      "Main to Release",
+      "Release => Main  v77.10",
+      "Release <-- Main",
+      "Main <-- Release",
+      "Merging Main to Release due to Hotfix",
+      "Update release branch with main",
+      "v77.9",
+      "v77",
+      "2.25.1",
+      "release",
+      "Release 77",
+      "Release v2.25.1",
+      "Release for v70.7",
+      "Release for v72",
+      "Release for v 73.31",
+      "Release for v70 (Transaction Confidentiality)",
+      "Release v4.3 to main",
+      "v73.15 Release",
+      "kato v76.3",
+      "kato-settings v3 release",
+      "Merge pull request #555 from kato-app/main",
+    ];
+    for (const title of titles) assert.ok(isHousekeepingPullRequest(title), title);
   });
 
-  it("leaves feature work, including titles that merely start with a version, to the unlinked log", () => {
-    // "Jam.dev to main" is not a long-lived branch sync and stays in the unlinked log on purpose.
-    for (const title of ["At 764 radius api floor name inference", "Hotfix for uuid migration", "Release notes page redesign", "Fix CI: update .ai submodule", "Jam.dev to main", "2 factor auth setup", "V2 endpoints for floors"]) {
-      assert.equal(isHousekeepingPullRequest(title), false, title);
-    }
-  });
-});
-
-describe("isHousekeepingPullRequest: release-cut variants seen in the wild", () => {
-  it("recognises 'Release for vX', versioned repo names and branch refreshes, but not feature titles containing 'release'", () => {
-    for (const title of ["Release for v70.7", "Release for v72", "Release for v 73.31", "Release <-- Main", "Main <-- Release", "Merging Main to Release due to Hotfix", "Release for v70 (Transaction Confidentiality)", "Release v4.3 to main", "v73.15 Release", "kato v76.3", "Update release branch with main"]) {
-      assert.ok(isHousekeepingPullRequest(title), title);
-    }
-    for (const title of ["Release notes page redesign", "Hotfix. Update labels to ULA related stuff. TO RELEASE", "awa-00000-hotfix-loader-example-file", "Prepare release checklist for v2 rollout"]) {
-      assert.equal(isHousekeepingPullRequest(title), false, title);
-    }
+  it("leaves feature work, including titles that merely start with a version or mention a release, to the unlinked list", () => {
+    // "Jam.dev to main" is not a long-lived branch sync and stays unlinked on purpose.
+    const titles = [
+      "At 764 radius api floor name inference",
+      "Hotfix for uuid migration",
+      "Release notes page redesign",
+      "Prepare release checklist for v2 rollout",
+      "Hotfix. Update labels to ULA related stuff. TO RELEASE",
+      "awa-00000-hotfix-loader-example-file",
+      "Fix CI: update .ai submodule",
+      "Jam.dev to main",
+      "2 factor auth setup",
+      "V2 endpoints for floors",
+      "Node 22",
+      "Rails 7.1",
+      "Phase 2 release",
+    ];
+    for (const title of titles) assert.equal(isHousekeepingPullRequest(title), false, title);
   });
 });

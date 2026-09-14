@@ -15,6 +15,7 @@ import {
   jiraIssue,
   linkedPullRequest,
   release,
+  shippedPullRequest as shipped,
   transition,
   validConfig,
 } from "./helpers/fakes.js";
@@ -226,25 +227,18 @@ describe("collectCycleTime", () => {
 });
 
 describe("reportUnlinkedPullRequests", () => {
-  const shipped = (title: string, publishedAt: string, n = 1) => ({
-    ref: { repo: kato, number: n },
-    title,
-    author: "kato-jm",
-    release: { repo: kato, tag: "v1", publishedAt: new Date(publishedAt) },
-  });
-
   it("classifies pull requests shipped after the watermark and logs one summary line rather than one warning each", () => {
     const logger = warnRecorder();
     const report = reportUnlinkedPullRequests(
       [
-        shipped("Hotfix for uuid migration", "2026-03-01T10:00:00Z", 1),
-        shipped("Awa 10288 kf availability", "2026-03-01T10:00:00Z", 2),
-        shipped("Fix AWA-10290 amendments", "2026-03-01T10:00:00Z", 3),
-        shipped("Main to Release", "2026-03-01T10:00:00Z", 4),
-        shipped("GR-12 linked fine", "2026-03-01T10:00:00Z", 5),
-        shipped("Old and unlinked", "2026-01-01T10:00:00Z", 6),
-        shipped("Phase 2 rollout", "2026-03-01T10:00:00Z", 7),
-        shipped("Upgrade to Node 22", "2026-03-01T10:00:00Z", 8),
+        shipped("Hotfix for uuid migration", 1, "2026-03-01T10:00:00Z"),
+        shipped("Awa 10288 kf availability", 2, "2026-03-01T10:00:00Z"),
+        shipped("Fix AWA-10290 amendments", 3, "2026-03-01T10:00:00Z"),
+        shipped("Main to Release", 4, "2026-03-01T10:00:00Z"),
+        shipped("GR-12 linked fine", 5, "2026-03-01T10:00:00Z"),
+        shipped("Old and unlinked", 6, "2026-01-01T10:00:00Z"),
+        shipped("Phase 2 rollout", 7, "2026-03-01T10:00:00Z"),
+        shipped("Upgrade to Node 22", 8, "2026-03-01T10:00:00Z"),
       ],
       new Date("2026-02-01T00:00:00Z"),
       ["GR", "CW"],
@@ -265,7 +259,7 @@ describe("reportUnlinkedPullRequests", () => {
   });
 
   it("audits everything when there is no watermark", () => {
-    const report = reportUnlinkedPullRequests([shipped("Old and unlinked", "2026-01-01T10:00:00Z")], undefined, ["GR"], noopLogger);
+    const report = reportUnlinkedPullRequests([shipped("Old and unlinked", 1, "2026-01-01T10:00:00Z")], undefined, ["GR"], noopLogger);
     assert.equal(report.length, 1);
   });
 });
