@@ -35,6 +35,8 @@ export const configSchema = z.object({
     excludedResolutions: z.array(z.string().min(1)).default(["Won't Do", "Duplicate", "Cannot Reproduce"]),
     /** Status names (case-insensitive) that mean the issue was shelved rather than delivered; such issues are never measured. */
     excludedStatuses: z.array(z.string().min(1)).default(["Archived"]),
+    /** Issue type names (case-insensitive) that are containers rather than work, e.g. Epic; such issues are never measured. */
+    excludedIssueTypes: z.array(z.string().min(1)).default(["Epic"]),
   }),
   logging: z.object({
     /** Project-relative path of the JSON log file that is appended to on every run. */

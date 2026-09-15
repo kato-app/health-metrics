@@ -32,6 +32,7 @@ const options: CollectOptions = {
   startStatuses: ["In Progress"],
   excludedResolutions: ["Won't Do", "Duplicate", "Cannot Reproduce"],
   excludedStatuses: ["Archived"],
+  excludedIssueTypes: ["Epic"],
 };
 const ctx = (existingRows: MetricRow[] = [], overrides: Partial<CollectContext> = {}) => ({ existingRows, full: false, logger: noopLogger, ...overrides });
 
@@ -381,5 +382,25 @@ describe("collectCycleTime pull request attribution", () => {
 
     assert.equal(row?.pr_count, 1);
     assert.equal(logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).length, 0);
+  });
+});
+
+describe("collectCycleTime excluded issue types", () => {
+  it("skips epics (or any configured type) before any lookup, even when a pull request names them", async () => {
+    const epic = jiraIssue({ key: "GR-1", type: "Epic" });
+    const jira = new FakeJiraSource([epic], { "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "GR-1-first")] });
+
+    const rows = await collectCycleTime({ jira, github: github() }, options, ctx());
+
+    assert.deepEqual(rows, []);
+    assert.equal(jira.linkedCalls.length, 0);
+  });
+
+  it("matches the type case-insensitively and leaves other types alone", async () => {
+    const jira = new FakeJiraSource([jiraIssue({ key: "GR-1", type: "Improvement" })], { "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "GR-1-first")] });
+
+    const rows = await collectCycleTime({ jira, github: github() }, { ...options, excludedIssueTypes: ["improvement"] }, ctx());
+
+    assert.deepEqual(rows, []);
   });
 });

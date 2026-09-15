@@ -22,6 +22,7 @@ export const validConfig: Config = {
     startStatuses: ["In Progress"],
     excludedResolutions: ["Won't Do", "Duplicate", "Cannot Reproduce"],
     excludedStatuses: ["Archived"],
+    excludedIssueTypes: ["Epic"],
   },
   logging: { file: "logs/app.log" },
 };

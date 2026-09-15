@@ -32,6 +32,7 @@ cp .env.example .env   # then fill in the values
 | `jira.startStatuses` | Status names (case-insensitive) whose first entry starts an issue's cycle. Optional; defaults to `["In Progress"]`. An issue that never enters one falls back to its first status in Jira's "In Progress" category. |
 | `jira.excludedResolutions` | Resolutions meaning "closed without delivering"; such issues are never measured. Optional; defaults to `["Won't Do", "Duplicate", "Cannot Reproduce"]`. |
 | `jira.excludedStatuses` | Status names (case-insensitive) meaning "shelved rather than delivered"; such issues are never measured even if their resolution is Done. Optional; defaults to `["Archived"]`. |
+| `jira.excludedIssueTypes` | Issue type names (case-insensitive) that are containers rather than work; such issues are never measured even when a pull request names them. Optional; defaults to `["Epic"]`. |
 | `jira.projects` | Jira projects to collect issues from, each as `{ "key": "GR", "team": "Kato Growth" }`. Only these projects are queried; metrics that read Jira write the team name to the sheet alongside the project key. |
 | `logging.file` | Project-relative path of the JSON log file, appended to on every run. |
 
@@ -179,6 +180,7 @@ One row per Jira issue that has been **delivered to production**, for the projec
 - is a sub-task (its parent is measured instead);
 - has a resolution listed in `jira.excludedResolutions`;
 - is in a status listed in `jira.excludedStatuses` (shelved, e.g. Archived), whatever its resolution;
+- is of a type listed in `jira.excludedIssueTypes` (containers, e.g. Epic), even when a pull request names its key. An epic closed retrospectively after its stories shipped would otherwise show a negative cycle time;
 - is already in the sheet;
 - still has a counted pull request that is neither merged nor declined (deferred: it will be measured once everything has merged and shipped);
 - has no counted, merged pull request in a collected repository. Spikes, investigations and non-code tasks therefore never appear. Declined pull requests and pull requests in other repositories are ignored;
