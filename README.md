@@ -178,9 +178,9 @@ One row per Jira issue that has been **delivered to production**, for the projec
 **Exclusion and deferral rules.** An issue produces no row when it:
 
 - is a sub-task (its parent is measured instead);
+- is of a type listed in `jira.excludedIssueTypes` (containers, e.g. Epic), even when a pull request names its key: an epic closed after its stories shipped would otherwise show a negative cycle time;
 - has a resolution listed in `jira.excludedResolutions`;
 - is in a status listed in `jira.excludedStatuses` (shelved, e.g. Archived), whatever its resolution;
-- is of a type listed in `jira.excludedIssueTypes` (containers, e.g. Epic), even when a pull request names its key. An epic closed retrospectively after its stories shipped would otherwise show a negative cycle time;
 - is already in the sheet;
 - still has a counted pull request that is neither merged nor declined (deferred: it will be measured once everything has merged and shipped);
 - has no counted, merged pull request in a collected repository. Spikes, investigations and non-code tasks therefore never appear. Declined pull requests and pull requests in other repositories are ignored;

@@ -147,6 +147,7 @@ describe("collectCycleTime", () => {
       jiraIssue({ key: "GR-109" }), // released before startDate
       jiraIssue({ key: "GR-110" }), // only an open PR: deferred, not a spike
       jiraIssue({ key: "GR-111", status: "Archived" }), // shelved: excluded status despite resolution Done and a shipped PR
+      jiraIssue({ key: "GR-112", type: "epic" }), // container: excluded type (any case) despite a shipped PR naming it
     ];
     const jira = new FakeJiraSource(issues, {
       "103": [linkedPullRequest(prUrl("kato", 10))],
@@ -157,15 +158,16 @@ describe("collectCycleTime", () => {
       "109": [linkedPullRequest(prUrl("kato", 9))],
       "110": [linkedPullRequest(prUrl("kato", 12), "OPEN")],
       "111": [linkedPullRequest(prUrl("kato", 10))],
+      "112": [linkedPullRequest(prUrl("kato", 10), "MERGED", "GR-112-first")],
     });
 
     const rows = await collectCycleTime({ jira, github: github() }, options, ctx([{ issue_key: "GR-103", released_at: "2026-02-11 10:00:00" }]));
 
     assert.deepEqual(rows.map((r) => r.issue_key), ["GR-107"]);
     assert.deepEqual(
-      ["101", "102", "103", "111"].filter((id) => jira.linkedCalls.includes(id)),
+      ["101", "102", "103", "111", "112"].filter((id) => jira.linkedCalls.includes(id)),
       [],
-      "sub-tasks, excluded resolutions and statuses, and issues already in the sheet are skipped before any lookup",
+      "sub-tasks, excluded types, resolutions and statuses, and issues already in the sheet are skipped before any lookup",
     );
   });
 
@@ -382,25 +384,5 @@ describe("collectCycleTime pull request attribution", () => {
 
     assert.equal(row?.pr_count, 1);
     assert.equal(logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).length, 0);
-  });
-});
-
-describe("collectCycleTime excluded issue types", () => {
-  it("skips epics (or any configured type) before any lookup, even when a pull request names them", async () => {
-    const epic = jiraIssue({ key: "GR-1", type: "Epic" });
-    const jira = new FakeJiraSource([epic], { "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "GR-1-first")] });
-
-    const rows = await collectCycleTime({ jira, github: github() }, options, ctx());
-
-    assert.deepEqual(rows, []);
-    assert.equal(jira.linkedCalls.length, 0);
-  });
-
-  it("matches the type case-insensitively and leaves other types alone", async () => {
-    const jira = new FakeJiraSource([jiraIssue({ key: "GR-1", type: "Improvement" })], { "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "GR-1-first")] });
-
-    const rows = await collectCycleTime({ jira, github: github() }, { ...options, excludedIssueTypes: ["improvement"] }, ctx());
-
-    assert.deepEqual(rows, []);
   });
 });

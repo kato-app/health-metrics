@@ -30,16 +30,17 @@ export interface CollectOptions {
   /** `YYYY-MM-DD`; issues released before this UTC day are ignored. */
   readonly startDate: string;
   readonly startStatuses: readonly string[];
-  readonly excludedResolutions: readonly string[];
-  /** Status names (case-insensitive) that mean the issue was shelved rather than delivered, e.g. Archived. */
-  readonly excludedStatuses: readonly string[];
-  /** Issue type names (case-insensitive) that are containers rather than work, e.g. Epic. */
+  /** Issue type names that are containers rather than work, e.g. Epic. */
   readonly excludedIssueTypes: readonly string[];
+  /** Resolutions that mean the issue was closed without being delivered, e.g. Won't Do. */
+  readonly excludedResolutions: readonly string[];
+  /** Status names that mean the issue was shelved rather than delivered, e.g. Archived. */
+  readonly excludedStatuses: readonly string[];
   readonly graceDays?: number;
 }
 
 /** Why an issue produced no row this run. Counted and logged so the gaps are visible. */
-type Skip = "subtask" | "excludedResolution" | "excludedStatus" | "excludedIssueType" | "alreadyInSheet" | "noMergedPullRequests" | "openPullRequests" | "unreleasedPullRequests" | "beforeStartDate";
+type Skip = "subtask" | "excludedIssueType" | "excludedResolution" | "excludedStatus" | "alreadyInSheet" | "noMergedPullRequests" | "openPullRequests" | "unreleasedPullRequests" | "beforeStartDate";
 
 /** A linked pull request in a collected repository, with the text Jira gives us to attribute it. */
 interface CandidatePullRequest {
@@ -109,6 +110,12 @@ function ownPullRequests(issue: JiraIssue, candidates: readonly CandidatePullReq
   return kept;
 }
 
+/** Membership test for a configured list of Jira names, compared case-insensitively. */
+function nameMatcher(names: readonly string[]): (name: string) => boolean {
+  const lower = new Set(names.map((n) => n.toLowerCase()));
+  return (name) => lower.has(name.toLowerCase());
+}
+
 function latest(dates: readonly Date[]): Date {
   return new Date(Math.max(...dates.map((d) => d.getTime())));
 }
@@ -127,9 +134,9 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
   const knownKeys = new Set(existingRows.map((row) => String(row.issue_key)));
   const teams = new Map(options.projects.map((p) => [p.key, p.team]));
   const projectKeys = options.projects.map((p) => p.key);
-  const excludedResolutions = new Set(options.excludedResolutions.map((r) => r.toLowerCase()));
-  const excludedStatuses = new Set(options.excludedStatuses.map((s) => s.toLowerCase()));
-  const excludedIssueTypes = new Set(options.excludedIssueTypes.map((t) => t.toLowerCase()));
+  const excludedIssueType = nameMatcher(options.excludedIssueTypes);
+  const excludedResolution = nameMatcher(options.excludedResolutions);
+  const excludedStatus = nameMatcher(options.excludedStatuses);
 
   logger.debug("Collecting cycle time", {
     startDate: startDate.toISOString(),
@@ -145,7 +152,7 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
     `project in (${projectKeys.join(", ")}) AND statusCategory = Done ` +
     `AND resolved >= "${resolvedSince.toISOString().slice(0, 10)}" ORDER BY resolved ASC`;
 
-  const skips: Record<Skip, number> = { subtask: 0, excludedResolution: 0, excludedStatus: 0, excludedIssueType: 0, alreadyInSheet: 0, noMergedPullRequests: 0, openPullRequests: 0, unreleasedPullRequests: 0, beforeStartDate: 0 };
+  const skips: Record<Skip, number> = { subtask: 0, excludedIssueType: 0, excludedResolution: 0, excludedStatus: 0, alreadyInSheet: 0, noMergedPullRequests: 0, openPullRequests: 0, unreleasedPullRequests: 0, beforeStartDate: 0 };
   const skip = (issue: JiraIssue, reason: Skip, detail: Record<string, unknown> = {}): undefined => {
     skips[reason] += 1;
     logger.debug("Skipping issue", { issue: issue.key, reason, ...detail });
@@ -154,9 +161,9 @@ export async function collectCycleTime(sources: CycleTimeSources, options: Colle
 
   async function deliver(issue: JiraIssue): Promise<DeliveredIssue | undefined> {
     if (issue.isSubtask) return skip(issue, "subtask");
-    if (issue.resolution && excludedResolutions.has(issue.resolution.toLowerCase())) return skip(issue, "excludedResolution", { resolution: issue.resolution });
-    if (excludedStatuses.has(issue.status.toLowerCase())) return skip(issue, "excludedStatus", { status: issue.status });
-    if (excludedIssueTypes.has(issue.type.toLowerCase())) return skip(issue, "excludedIssueType", { type: issue.type });
+    if (excludedIssueType(issue.type)) return skip(issue, "excludedIssueType", { type: issue.type });
+    if (issue.resolution && excludedResolution(issue.resolution)) return skip(issue, "excludedResolution", { resolution: issue.resolution });
+    if (excludedStatus(issue.status)) return skip(issue, "excludedStatus", { status: issue.status });
     if (knownKeys.has(issue.key)) return skip(issue, "alreadyInSheet");
 
     const linked = relevantPullRequests(await jira.listLinkedPullRequests(issue.id), options.repos);
