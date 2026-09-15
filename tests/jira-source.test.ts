@@ -162,6 +162,34 @@ describe("JiraClient.searchIssueKeys", () => {
   });
 });
 
+const rawSummary = { id: "9", key: "GR-9", fields: { issuetype: { name: "Bug" }, project: { key: "GR" }, created: "2026-02-05T09:00:00.000+0000", labels: ["regression"], versions: [{ name: "v71.0" }] } };
+
+describe("JiraClient.searchIssueSummaries", () => {
+  it("requests only the summary fields and maps labels and affected versions", async () => {
+    const { fetch, jira } = client({ "/rest/api/3/search/jql": () => ({ body: { issues: [rawSummary], isLast: true } }) });
+
+    const [bug] = await Array.fromAsync(jira.searchIssueSummaries("issuetype = Bug"));
+
+    assert.equal(fetch.requests[0]?.searchParams.get("fields"), "issuetype,project,created,labels,versions");
+    assert.equal(fetch.requests[0]?.searchParams.has("expand"), false);
+    assert.deepEqual(bug, { id: "9", key: "GR-9", projectKey: "GR", type: "Bug", createdAt: new Date("2026-02-05T09:00:00Z"), labels: ["regression"], affectsVersions: ["v71.0"] });
+  });
+});
+
+describe("JiraClient.getIssue", () => {
+  it("reads one issue by key, answers undefined for a 404 and still fails on any other error", async () => {
+    const { fetch, jira } = client({
+      "/rest/api/3/issue/GR-9": () => ({ body: rawSummary }),
+      "/rest/api/3/issue/GR-403": () => ({ status: 403, body: "forbidden" }),
+    });
+
+    assert.equal((await jira.getIssue("GR-9"))?.affectsVersions[0], "v71.0");
+    assert.equal(fetch.requests[0]?.searchParams.get("fields"), "issuetype,project,created,labels,versions");
+    assert.equal(await jira.getIssue("AWA-000"), undefined, "the fake answers 404 for unknown paths");
+    await assert.rejects(jira.getIssue("GR-403"), /HTTP 403/);
+  });
+});
+
 describe("JiraClient rate limiting", () => {
   const statuses = JSON.stringify([{ id: "1", statusCategory: { key: "new" } }]);
   const rateLimited = (responses: Response[]) => {

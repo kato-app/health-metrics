@@ -4,13 +4,13 @@ import type { Logger } from "../../logging/logger.js";
 import {
   changelogHistorySchema,
   issueSchema,
-  jiraDate,
-  toJiraIssue,
   issueSummarySchema,
+  jiraDate,
   toIssueSummary,
-  type JiraIssueSummary,
+  toJiraIssue,
   type ChangelogHistory,
   type JiraIssue,
+  type JiraIssueSummary,
   type JiraSource,
   type LinkedPullRequest,
   type RawJiraIssue,
@@ -209,6 +209,7 @@ export function createJiraClient(options: JiraClientOptions): JiraSource {
     async getIssue(key: string): Promise<JiraIssueSummary | undefined> {
       const path = `/rest/api/3/issue/${encodeURIComponent(key)}`;
       const response = await request(path, { fields: SUMMARY_FIELDS });
+      // Jira answers 404 both for a key that does not exist and for one this user may not see; neither is a failure of the run.
       if (response.status === 404) return undefined;
       if (!response.ok) throw describeJiraError(response.status, path, response.text);
       return toIssueSummary(parse(path, response.text, issueSummarySchema));

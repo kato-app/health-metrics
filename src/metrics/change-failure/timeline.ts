@@ -8,13 +8,10 @@ export function releaseKey(release: ReleaseRef): string {
 
 /** Releases per repository in publication order, with the lookups attribution needs. */
 export class ReleaseTimeline {
-  private readonly byRepo = new Map<string, ReleaseRef[]>();
+  private readonly byRepo: Map<string, ReleaseRef[]>;
 
   constructor(releases: readonly ReleaseRef[]) {
-    for (const release of releases) {
-      const key = repoFullName(release.repo);
-      (this.byRepo.get(key) ?? this.byRepo.set(key, []).get(key)!).push(release);
-    }
+    this.byRepo = Map.groupBy(releases, (release) => repoFullName(release.repo));
     for (const list of this.byRepo.values()) list.sort((a, b) => a.publishedAt.getTime() - b.publishedAt.getTime());
   }
 
@@ -25,21 +22,21 @@ export class ReleaseTimeline {
 
   /** The release of `repo` that was live at `at`: the latest published at or before it. */
   liveAt(repo: RepoRef, at: Date): ReleaseRef | undefined {
-    let live: ReleaseRef | undefined;
-    for (const release of this.releasesOf(repo)) {
-      if (release.publishedAt > at) break;
-      live = release;
-    }
-    return live;
+    return this.latest(repo, (release) => release.publishedAt <= at);
   }
 
   /** The release of the same repository published immediately before `release`. */
   previous(release: ReleaseRef): ReleaseRef | undefined {
-    let previous: ReleaseRef | undefined;
-    for (const candidate of this.releasesOf(release.repo)) {
-      if (candidate.publishedAt >= release.publishedAt) break;
-      previous = candidate;
+    return this.latest(release.repo, (candidate) => candidate.publishedAt < release.publishedAt);
+  }
+
+  /** The last release of `repo`, in publication order, for which `earlyEnough` still holds. */
+  private latest(repo: RepoRef, earlyEnough: (release: ReleaseRef) => boolean): ReleaseRef | undefined {
+    let latest: ReleaseRef | undefined;
+    for (const release of this.releasesOf(repo)) {
+      if (!earlyEnough(release)) break;
+      latest = release;
     }
-    return previous;
+    return latest;
   }
 }

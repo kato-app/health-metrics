@@ -13,17 +13,18 @@ const ref = (repo: typeof kato, tag: string, publishedAt: string): ReleaseRef =>
 
 describe("signals", () => {
   it("recognises hotfix and revert titles", () => {
-    for (const t of ["Hotfix for uuid migration", "HOTFIX. Rightmove V2 validation. TO RELEASE", "hot fix loader", "awa-00000-hotfix-loader-example-file", "AT-635: Hotfix showing kato signals"]) {
+    for (const t of ["Hotfix for uuid migration", "HOTFIX. Rightmove V2 validation. TO RELEASE", "hot fix loader", "Hot-Fix loader", "awa-00000-hotfix-loader-example-file", "AT-635: Hotfix showing kato signals"]) {
       assert.ok(isHotfixTitle(t), t);
     }
     assert.equal(isHotfixTitle("Fix hot path performance"), false);
+    assert.equal(isHotfixTitle("Snapshot fix for the dashboard"), false, "hot must start a word");
     assert.ok(isRevertTitle('Revert "AT-764: radius api"'));
     assert.equal(isRevertTitle("Do not revert this"), false);
   });
 
   it("parses version tags and identifies patch tags", () => {
-    assert.deepEqual(parseVersionTag("v73.36.1"), { parts: [73, 36, 1] });
-    assert.deepEqual(parseVersionTag("2.25"), { parts: [2, 25] });
+    assert.deepEqual(parseVersionTag("v73.36.1"), [73, 36, 1]);
+    assert.deepEqual(parseVersionTag("2.25"), [2, 25]);
     assert.equal(parseVersionTag("s5"), undefined);
     assert.equal(parseVersionTag("kato v76.3"), undefined);
     assert.ok(isPatchTag("v73.36.1"));
@@ -38,10 +39,11 @@ describe("signals", () => {
       ref(kato, "v73.35", "2026-03-01T10:00:00Z"),
       ref(kato, "v73.36", "2026-03-02T10:00:00Z"),
       ref(kato, "v73.36.1", "2026-03-03T10:00:00Z"),
+      ref(kato, "v73.36.1.1", "2026-03-04T09:00:00Z"),
       ref(kato, "v73.37", "2026-03-05T10:00:00Z"),
     ];
     assert.equal(findPatchBase(ref(kato, "v73.36.1", "2026-03-03T10:00:00Z"), earlier)?.tag, "v73.36");
-    assert.equal(findPatchBase(ref(kato, "v73.36.2", "2026-03-04T10:00:00Z"), earlier)?.tag, "v73.36.1");
+    assert.equal(findPatchBase(ref(kato, "v73.36.2", "2026-03-04T10:00:00Z"), earlier)?.tag, "v73.36.1", "a deeper tag like v73.36.1.1 is not a sibling patch");
     assert.equal(findPatchBase(ref(kato, "v73.38.1", "2026-03-06T10:00:00Z"), earlier), undefined, "base not indexed");
     assert.equal(findPatchBase(ref(kato, "v73.37", "2026-03-05T10:00:00Z"), earlier), undefined, "not a patch tag");
   });

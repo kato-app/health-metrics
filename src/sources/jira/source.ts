@@ -127,7 +127,6 @@ export interface LinkedPullRequest {
   readonly lastUpdate: Date;
 }
 
-/** Read-only access to Jira Cloud. */
 /** The fields needed to attribute a bug to a release, without the changelog. */
 export const issueSummarySchema = z.object({
   id: z.string(),
@@ -164,6 +163,7 @@ export function toIssueSummary(raw: z.infer<typeof issueSummarySchema>): JiraIss
   };
 }
 
+/** Read-only access to Jira Cloud. */
 export interface JiraSource {
   /** Issues matching a JQL query, with their complete status changelog. Pages lazily. */
   searchIssues(jql: string): AsyncIterable<JiraIssue>;
