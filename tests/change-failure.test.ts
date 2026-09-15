@@ -145,3 +145,13 @@ describe("findRemediations", () => {
     assert.equal(report.byRelease.size, 0);
   });
 });
+
+describe("findPatchBase with major-only base tags", () => {
+  it("treats v68 as the base of v68.0.1, and v68.0.1 as the base of v68.0.2", () => {
+    const earlier = [ref(kato, "v67", "2026-01-20T10:00:00Z"), ref(kato, "v68", "2026-02-01T10:00:00Z"), ref(kato, "v68.0.1", "2026-02-02T10:00:00Z"), ref(kato, "v68.1", "2026-02-05T10:00:00Z")];
+    assert.equal(findPatchBase(ref(kato, "v68.0.1", "2026-02-02T10:00:00Z"), earlier)?.tag, "v68");
+    assert.equal(findPatchBase(ref(kato, "v68.0.2", "2026-02-03T10:00:00Z"), earlier)?.tag, "v68.0.1");
+    assert.equal(findPatchBase(ref(kato, "v68.1.1", "2026-02-06T10:00:00Z"), earlier)?.tag, "v68.1");
+    assert.equal(findPatchBase(ref(kato, "v69.0.1", "2026-02-07T10:00:00Z"), earlier), undefined, "v69 never released");
+  });
+});

@@ -58,10 +58,29 @@ export function findPatchBase(patch: ReleaseRef, earlierReleases: readonly Relea
   return best?.release;
 }
 
-/** Where `tag` sits on `base`: `v73.36` and `v73.36.0` are level 0 of [73, 36], `v73.36.2` is level 2; undefined for any other tag. */
+/**
+ * Where `tag` sits on `base`: `v73.36` and `v73.36.0` are level 0 of [73, 36],
+ * `v73.36.2` is level 2; undefined for any other tag. Trailing zeros do not
+ * count, so `v68` is level 0 of [68, 0] and therefore the base of `v68.0.1`,
+ * which is how the teams tag a first patch on a major release.
+ */
 function patchLevel(base: readonly number[], tag: string): number | undefined {
   const parts = parseVersionTag(tag);
-  if (!parts || parts.length < base.length || parts.length > base.length + 1) return undefined;
-  if (!base.every((n, i) => parts[i] === n)) return undefined;
-  return parts[base.length] ?? 0;
+  if (!parts) return undefined;
+  if (sameVersion(parts, base)) return 0;
+  if (parts.length === base.length + 1 && base.every((n, i) => parts[i] === n)) return parts[base.length]!;
+  return undefined;
+}
+
+/** `v68`, `v68.0` and `v68.0.0` are the same version. */
+function sameVersion(a: readonly number[], b: readonly number[]): boolean {
+  const x = withoutTrailingZeros(a);
+  const y = withoutTrailingZeros(b);
+  return x.length === y.length && x.every((n, i) => n === y[i]);
+}
+
+function withoutTrailingZeros(parts: readonly number[]): readonly number[] {
+  let end = parts.length;
+  while (end > 1 && parts[end - 1] === 0) end -= 1;
+  return parts.slice(0, end);
 }
