@@ -31,6 +31,7 @@ const options: CollectOptions = {
   startDate: "2026-01-01",
   startStatuses: ["In Progress"],
   excludedResolutions: ["Won't Do", "Duplicate", "Cannot Reproduce"],
+  excludedStatuses: ["Archived"],
 };
 const ctx = (existingRows: MetricRow[] = [], overrides: Partial<CollectContext> = {}) => ({ existingRows, full: false, logger: noopLogger, ...overrides });
 
@@ -356,5 +357,41 @@ describe("collectCycleTime pull request attribution", () => {
 
     assert.equal(row?.pr_count, 1);
     assert.equal(logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).length, 0);
+  });
+});
+
+describe("collectCycleTime shelved issues and foreign-only links", () => {
+  it("skips issues in an excluded status such as Archived, even with a Done resolution and a linked pull request", async () => {
+    const archived = jiraIssue({ key: "GR-1", status: "Archived", statusTransitions: [transition("done", "2026-02-19T12:42:06Z", "toDo")] });
+    const jira = new FakeJiraSource([archived], { "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "GR-1-first")] });
+
+    const rows = await collectCycleTime({ jira, github: github() }, options, ctx());
+
+    assert.deepEqual(rows, []);
+    assert.equal(jira.linkedCalls.length, 0, "excluded before any lookup");
+  });
+
+  it("treats an issue whose only linked pull requests belong to other tickets as having no pull request, and warns", async () => {
+    const logger = warnRecorder();
+    const jira = new FakeJiraSource([jiraIssue({ key: "GR-1" })], { "1": [linkedPullRequest(prUrl("kato", 11), "MERGED", "CW-7-thing", "CW-7 thing")] });
+
+    const rows = await collectCycleTime({ jira, github: github() }, options, { existingRows: [], full: false, logger });
+
+    assert.deepEqual(rows, []);
+    assert.deepEqual(
+      logger.lines.filter((l) => l.message.startsWith("Ignoring linked")).map((l) => [l.context?.kept, l.context?.ignored]),
+      [[[], ["kato-app/kato#11 (CW-7)"]]],
+    );
+  });
+
+  it("still falls back to unnamed pull requests while dropping the foreign ones", async () => {
+    const jira = new FakeJiraSource([jiraIssue({ key: "GR-1" })], {
+      "1": [linkedPullRequest(prUrl("kato", 10), "MERGED", "hotfix-loader"), linkedPullRequest(prUrl("kato-settings", 5), "MERGED", "CW-9-follow-up")],
+    });
+
+    const [row] = await collectCycleTime({ jira, github: github() }, options, ctx());
+
+    assert.equal(row?.pr_count, 1);
+    assert.equal(row?.released_at, "2026-02-11 10:00:00");
   });
 });

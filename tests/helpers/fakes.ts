@@ -21,6 +21,7 @@ export const validConfig: Config = {
     projects: [{ key: "GR", team: "Kato Growth" }],
     startStatuses: ["In Progress"],
     excludedResolutions: ["Won't Do", "Duplicate", "Cannot Reproduce"],
+    excludedStatuses: ["Archived"],
   },
   logging: { file: "logs/app.log" },
 };

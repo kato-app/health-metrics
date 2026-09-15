@@ -15,6 +15,7 @@ export const cycleTime: MetricFactory = ({ config, github, jira, repos }): Metri
         startDate: config.startDate,
         startStatuses: config.jira.startStatuses,
         excludedResolutions: config.jira.excludedResolutions,
+        excludedStatuses: config.jira.excludedStatuses,
       },
       context,
     ),

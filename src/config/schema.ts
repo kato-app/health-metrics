@@ -33,6 +33,8 @@ export const configSchema = z.object({
     startStatuses: z.array(z.string().min(1)).min(1).default(["In Progress"]),
     /** Resolutions that mean the issue was closed without being delivered; such issues are never measured. */
     excludedResolutions: z.array(z.string().min(1)).default(["Won't Do", "Duplicate", "Cannot Reproduce"]),
+    /** Status names (case-insensitive) that mean the issue was shelved rather than delivered; such issues are never measured. */
+    excludedStatuses: z.array(z.string().min(1)).default(["Archived"]),
   }),
   logging: z.object({
     /** Project-relative path of the JSON log file that is appended to on every run. */
