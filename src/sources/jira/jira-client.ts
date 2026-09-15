@@ -6,6 +6,9 @@ import {
   issueSchema,
   jiraDate,
   toJiraIssue,
+  issueSummarySchema,
+  toIssueSummary,
+  type JiraIssueSummary,
   type ChangelogHistory,
   type JiraIssue,
   type JiraSource,
@@ -40,6 +43,8 @@ function retryDelayMs(response: Response, attempt: number): number {
 
 /** Fields the application reads; requesting only these keeps search responses small. */
 const ISSUE_FIELDS = ["summary", "issuetype", "project", "status", "resolution", "created", "resolutiondate"];
+/** Fields behind `JiraIssueSummary`: enough to attribute a bug to a release. */
+const SUMMARY_FIELDS = "issuetype,project,created,labels,versions";
 
 /** `/search/jql` pages by opaque token; the token is absent (or null) on the last page. */
 function searchPageSchema<T>(issue: z.ZodType<T>) {
@@ -125,14 +130,14 @@ export function createJiraClient(options: JiraClientOptions): JiraSource {
     }
   }
 
-  async function get<T>(path: string, params: Record<string, string | undefined>, schema: z.ZodType<T>): Promise<T> {
+  async function request(path: string, params: Record<string, string | undefined>): Promise<{ status: number; ok: boolean; text: string }> {
     const url = new URL(`${baseUrl}${path}`);
     for (const [key, value] of Object.entries(params)) if (value !== undefined) url.searchParams.set(key, value);
-
     const response = await fetchWithRateLimitRetry(url, path);
-    const text = await response.text();
-    if (!response.ok) throw describeJiraError(response.status, path, text);
+    return { status: response.status, ok: response.ok, text: await response.text() };
+  }
 
+  function parse<T>(path: string, text: string, schema: z.ZodType<T>): T {
     let json: unknown;
     try {
       json = JSON.parse(text);
@@ -145,6 +150,12 @@ export function createJiraClient(options: JiraClientOptions): JiraSource {
       throw new Error(`Unexpected Jira payload from ${path}: ${parsed.error.message}`, { cause: parsed.error });
     }
     return parsed.data;
+  }
+
+  async function get<T>(path: string, params: Record<string, string | undefined>, schema: z.ZodType<T>): Promise<T> {
+    const response = await request(path, params);
+    if (!response.ok) throw describeJiraError(response.status, path, response.text);
+    return parse(path, response.text, schema);
   }
 
   /** Search embeds at most 100 changelog entries per issue; re-read the whole changelog for the few issues that have more. */
@@ -189,6 +200,18 @@ export function createJiraClient(options: JiraClientOptions): JiraSource {
 
     async *searchIssueKeys(jql: string): AsyncIterable<string> {
       for await (const issue of search(jql, { fields: "key" }, issueKeySchema)) yield issue.key;
+    },
+
+    async *searchIssueSummaries(jql: string): AsyncIterable<JiraIssueSummary> {
+      for await (const raw of search(jql, { fields: SUMMARY_FIELDS }, issueSummarySchema)) yield toIssueSummary(raw);
+    },
+
+    async getIssue(key: string): Promise<JiraIssueSummary | undefined> {
+      const path = `/rest/api/3/issue/${encodeURIComponent(key)}`;
+      const response = await request(path, { fields: SUMMARY_FIELDS });
+      if (response.status === 404) return undefined;
+      if (!response.ok) throw describeJiraError(response.status, path, response.text);
+      return toIssueSummary(parse(path, response.text, issueSummarySchema));
     },
 
     async listStatusCategories() {

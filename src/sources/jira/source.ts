@@ -128,11 +128,51 @@ export interface LinkedPullRequest {
 }
 
 /** Read-only access to Jira Cloud. */
+/** The fields needed to attribute a bug to a release, without the changelog. */
+export const issueSummarySchema = z.object({
+  id: z.string(),
+  key: z.string(),
+  fields: z.object({
+    issuetype: z.object({ name: z.string() }),
+    project: z.object({ key: z.string() }),
+    created: jiraDate,
+    labels: z.array(z.string()).default([]),
+    /** Jira's "Affects Version/s". */
+    versions: z.array(z.object({ name: z.string() })).default([]),
+  }),
+});
+
+export interface JiraIssueSummary {
+  readonly id: string;
+  readonly key: string;
+  readonly projectKey: string;
+  readonly type: string;
+  readonly createdAt: Date;
+  readonly labels: readonly string[];
+  readonly affectsVersions: readonly string[];
+}
+
+export function toIssueSummary(raw: z.infer<typeof issueSummarySchema>): JiraIssueSummary {
+  return {
+    id: raw.id,
+    key: raw.key,
+    projectKey: raw.fields.project.key,
+    type: raw.fields.issuetype.name,
+    createdAt: raw.fields.created,
+    labels: raw.fields.labels,
+    affectsVersions: raw.fields.versions.map((v) => v.name),
+  };
+}
+
 export interface JiraSource {
   /** Issues matching a JQL query, with their complete status changelog. Pages lazily. */
   searchIssues(jql: string): AsyncIterable<JiraIssue>;
   /** Only the keys of issues matching a JQL query: far cheaper than `searchIssues` when nothing else is needed. */
   searchIssueKeys(jql: string): AsyncIterable<string>;
+  /** Key, type, creation date, labels and affected versions of issues matching a JQL query. Pages lazily. */
+  searchIssueSummaries(jql: string): AsyncIterable<JiraIssueSummary>;
+  /** One issue by key, or undefined when Jira has no such issue (keys in pull request titles are not always real). */
+  getIssue(key: string): Promise<JiraIssueSummary | undefined>;
   /** Every workflow status in the site, keyed by status id, mapped to its category. */
   listStatusCategories(): Promise<ReadonlyMap<string, StatusCategory | string>>;
   /** Pull requests the GitHub integration has linked to the issue with this numeric id. */

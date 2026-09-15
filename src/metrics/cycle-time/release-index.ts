@@ -6,6 +6,8 @@ import { pullRequestKey, repoFullName, type GitHubSource, type PullRequestRef, t
 export interface ReleaseRef {
   readonly repo: RepoRef;
   readonly tag: string;
+  /** The release title as written in GitHub, if any. */
+  readonly name: string | null;
   readonly publishedAt: Date;
 }
 
@@ -23,6 +25,8 @@ export interface ReleaseIndex {
   releaseFor(ref: PullRequestRef): ReleaseRef | undefined;
   /** Every pull request listed in the indexed releases' notes, for linkage auditing. */
   readonly shipped: readonly ShippedPullRequest[];
+  /** Every indexed release (published, not draft or prerelease), oldest first across all repositories. */
+  readonly releases: readonly ReleaseRef[];
 }
 
 /**
@@ -42,7 +46,7 @@ export async function buildReleaseIndex(
   logger: Logger,
 ): Promise<ReleaseIndex> {
   const byPullRequest = new Map<string, ShippedPullRequest>();
-  let releases = 0;
+  const indexed: ReleaseRef[] = [];
 
   for (const repo of repos) {
     for await (const release of github.listReleases(repo)) {
@@ -51,9 +55,8 @@ export async function buildReleaseIndex(
       if (release.draft || release.prerelease || release.published_at === null) continue;
       const publishedAt = new Date(release.published_at);
       if (publishedAt < since) continue;
-      releases += 1;
-
-      const releaseRef: ReleaseRef = { repo, tag: release.tag_name, publishedAt };
+      const releaseRef: ReleaseRef = { repo, tag: release.tag_name, name: release.name, publishedAt };
+      indexed.push(releaseRef);
       for (const { ref, title, author } of parseReleaseNotes(release.body)) {
         const key = pullRequestKey(ref);
         const existing = byPullRequest.get(key);
@@ -63,9 +66,10 @@ export async function buildReleaseIndex(
     logger.debug("Indexed releases", { repo: repoFullName(repo) });
   }
 
-  logger.info("Built release index", { repos: repos.length, releases, pullRequests: byPullRequest.size, since: since.toISOString() });
+  logger.info("Built release index", { repos: repos.length, releases: indexed.length, pullRequests: byPullRequest.size, since: since.toISOString() });
   return {
     releaseFor: (ref) => byPullRequest.get(pullRequestKey(ref))?.release,
     shipped: [...byPullRequest.values()],
+    releases: indexed.sort((a, b) => a.publishedAt.getTime() - b.publishedAt.getTime()),
   };
 }

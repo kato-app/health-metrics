@@ -24,7 +24,7 @@ describe("buildReleaseIndex", () => {
 
     const index = await buildReleaseIndex(github, [kato, settings], since, noopLogger);
 
-    assert.deepEqual(index.releaseFor({ repo: kato, number: 20 }), { repo: kato, tag: "v2", publishedAt: new Date("2026-02-01T10:00:00Z") });
+    assert.deepEqual(index.releaseFor({ repo: kato, number: 20 }), { repo: kato, tag: "v2", name: "v2", publishedAt: new Date("2026-02-01T10:00:00Z") });
     assert.equal(index.releaseFor({ repo: kato, number: 30 })?.tag, "v3");
     assert.equal(index.releaseFor({ repo: settings, number: 7 })?.tag, "s5");
     assert.equal(index.releaseFor({ repo: kato, number: 10 }), undefined, "release before `since` is not indexed");

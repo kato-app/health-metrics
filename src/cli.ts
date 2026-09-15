@@ -24,6 +24,8 @@ const offlineRepos: RepoRegistry = { list: offline };
 const offlineJira: JiraSource = {
   searchIssues: offline,
   searchIssueKeys: offline,
+  searchIssueSummaries: offline,
+  getIssue: offline,
   listStatusCategories: offline,
   listLinkedPullRequests: offline,
 };

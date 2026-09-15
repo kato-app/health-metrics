@@ -2,7 +2,7 @@ import type { Config } from "../../src/config/schema.js";
 import type { CollectContext, Metric, MetricRow } from "../../src/core/metric.js";
 import type { MetricSink } from "../../src/core/sink.js";
 import type { ShippedPullRequest } from "../../src/metrics/cycle-time/release-index.js";
-import type { JiraIssue, JiraSource, LinkedPullRequest, StatusCategory, StatusTransition } from "../../src/sources/jira/source.js";
+import type { JiraIssue, JiraIssueSummary, JiraSource, LinkedPullRequest, StatusCategory, StatusTransition } from "../../src/sources/jira/source.js";
 import {
   pullRequestKey,
   type GitHubPullRequest,
@@ -87,7 +87,7 @@ export class FakeGitHubSource implements GitHubSource {
 /** A pull request from kato-app/kato as the release index lists it, shipped in release `v1`. */
 export function shippedPullRequest(title: string, number: number, publishedAt = "2026-03-01T10:00:00Z", author = "kato-jm"): ShippedPullRequest {
   const repo = { owner: "kato-app", name: "kato" };
-  return { ref: { repo, number }, title, author, release: { repo, tag: "v1", publishedAt: new Date(publishedAt) } };
+  return { ref: { repo, number }, title, author, release: { repo, tag: "v1", name: null, publishedAt: new Date(publishedAt) } };
 }
 
 /** In-memory sink that records every append and replace. */
@@ -178,6 +178,19 @@ export function linkedPullRequest(url: string, status = "MERGED", sourceBranch: 
   return { url, title, status, sourceBranch, lastUpdate: new Date("2026-02-09T12:00:00Z") };
 }
 
+/** Builds a Jira bug summary; override whatever the test cares about. */
+export function jiraIssueSummary(overrides: Partial<JiraIssueSummary> & { key: string }): JiraIssueSummary {
+  return {
+    id: overrides.key.replace(/\D/g, "") || "1",
+    projectKey: overrides.key.split("-")[0]!,
+    type: "Bug",
+    createdAt: new Date("2026-02-12T09:00:00Z"),
+    labels: [],
+    affectsVersions: [],
+    ...overrides,
+  };
+}
+
 /**
  * In-memory Jira. `searchIssues` only records the JQL, so tests can assert on
  * the query, and yields every issue oldest resolved first.
@@ -192,11 +205,22 @@ export class FakeJiraSource implements JiraSource {
     private readonly categories: ReadonlyMap<string, StatusCategory | string> = STATUS_CATEGORIES,
     /** What `searchIssueKeys` answers, whatever the JQL: the keys of issues with no development information. */
     private readonly issueKeysWithoutLinks: readonly string[] = [],
+    /** Issues `getIssue` can find; `searchIssueSummaries` yields those carrying a label or an affected version. */
+    private readonly summaries: readonly JiraIssueSummary[] = [],
   ) {}
 
   async *searchIssues(jql: string): AsyncIterable<JiraIssue> {
     this.queries.push(jql);
     yield* [...this.issues].sort((a, b) => (a.resolvedAt?.getTime() ?? 0) - (b.resolvedAt?.getTime() ?? 0));
+  }
+
+  async *searchIssueSummaries(jql: string): AsyncIterable<JiraIssueSummary> {
+    this.queries.push(jql);
+    yield* this.summaries.filter((s) => s.labels.length > 0 || s.affectsVersions.length > 0);
+  }
+
+  async getIssue(key: string): Promise<JiraIssueSummary | undefined> {
+    return this.summaries.find((s) => s.key === key);
   }
 
   async *searchIssueKeys(jql: string): AsyncIterable<string> {
