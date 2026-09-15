@@ -172,13 +172,13 @@ One row per Jira issue that has been **delivered to production**, for the projec
 | `cycle_time_days` | `released_at − started_at` in calendar days. Blank when `started_at` is blank. |
 | `lead_time_days` | `released_at − created_at` in calendar days. |
 
-**Which pull requests count.** Jira links a pull request to every issue mentioned in its commits or description, so a follow-up under another ticket can attach itself to an issue months later and drag its release date forward. The metric therefore uses only the linked pull requests whose branch name or title names the issue's own key (any case, any separator). If none of them do, it falls back to the linked pull requests that name no configured issue at all, since some teams put the key in commit messages alone. A pull request that names a different configured issue is never counted for this one; an issue whose only links are other tickets' work therefore has no pull request and is not measured. A dropped pull request neither ends the cycle nor, while still open, defers the issue. When one is dropped because it names a different configured issue, the run logs a warning listing the pull requests kept and ignored with the other issue's key.
+**Which pull requests count.** Jira links a pull request to every issue mentioned in its commits or description, so a follow-up under another ticket can attach itself to an issue months later and drag its release date forward. The metric therefore uses only the linked pull requests whose branch name or title names the issue's own key (any case, any separator). If none of them do, it falls back to the linked pull requests that name no configured issue at all, since some teams put the key in commit messages alone. A pull request that names a different configured issue is never counted for this one; an issue whose only links are other tickets' work therefore has no pull request and is not measured. A dropped pull request neither ends the cycle nor, while still open, defers the issue. Whenever one is dropped for naming another configured issue, the run logs a warning listing the pull requests kept (possibly none) and those ignored, each with the other issue's key.
 
 **Exclusion and deferral rules.** An issue produces no row when it:
 
 - is a sub-task (its parent is measured instead);
 - has a resolution listed in `jira.excludedResolutions`;
-- is in a status listed in `jira.excludedStatuses`, such as Archived, whatever its resolution;
+- is in a status listed in `jira.excludedStatuses` (shelved, e.g. Archived), whatever its resolution;
 - is already in the sheet;
 - still has a counted pull request that is neither merged nor declined (deferred: it will be measured once everything has merged and shipped);
 - has no counted, merged pull request in a collected repository. Spikes, investigations and non-code tasks therefore never appear. Declined pull requests and pull requests in other repositories are ignored;

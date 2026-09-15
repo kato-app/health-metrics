@@ -69,25 +69,34 @@ function attributionTexts(pr: CandidatePullRequest): string[] {
 /**
  * Jira links a pull request to every issue its commits or description mention,
  * so follow-up work under another ticket can attach itself months later and
- * drag this issue's release date forward. Prefer the pull requests whose
- * branch or title name this issue; only if none do, fall back to the linked
- * pull requests that name no configured issue at all (some teams put the key
- * in commit messages alone). Pull requests naming another issue are never
- * counted, so an issue whose only links are other tickets' work has no pull
- * request and is not measured. Applied before
- * the open/merged split, so a dropped pull request neither ends the cycle nor,
- * while open, defers the issue. Warns when a dropped pull request names another
- * configured issue, so the attribution can be checked against both tickets.
+ * drag this issue's release date forward. Each linked pull request is one of:
+ * own (its branch or title names this issue), foreign (it names another
+ * configured issue, so it belongs to that one and never counts here) or
+ * unnamed. Own pull requests win; only when there are none do the unnamed ones
+ * count, since some teams put the key in commit messages alone. An issue whose
+ * only links are foreign therefore has no pull request and is not measured.
+ *
+ * Applied before the open/merged split, so a dropped pull request neither ends
+ * the cycle nor, while open, defers the issue. Warns whenever a foreign pull
+ * request is dropped, so the attribution can be checked against both tickets.
  */
 function ownPullRequests(issue: JiraIssue, candidates: readonly CandidatePullRequest[], projectKeys: readonly string[], logger: Logger): readonly CandidatePullRequest[] {
-  // Joined on a newline so a key cannot straddle branch and title.
-  const keysOf = (pr: CandidatePullRequest) => extractIssueKeys(attributionTexts(pr).join("\n"), projectKeys);
-  const own = candidates.filter((pr) => attributionTexts(pr).some((text) => mentionsIssueKey(text, issue.key)));
-  // Fallback: pull requests that name no configured issue at all. One that names
-  // another issue belongs to that issue, never to this one.
-  const kept = own.length > 0 ? own : candidates.filter((pr) => keysOf(pr).length === 0);
+  const own: CandidatePullRequest[] = [];
+  const unnamed: CandidatePullRequest[] = [];
+  const foreign: { pr: CandidatePullRequest; keys: string[] }[] = [];
+  for (const pr of candidates) {
+    const texts = attributionTexts(pr);
+    if (texts.some((text) => mentionsIssueKey(text, issue.key))) {
+      own.push(pr);
+      continue;
+    }
+    // Joined on a newline so a key cannot straddle branch and title.
+    const keys = extractIssueKeys(texts.join("\n"), projectKeys);
+    if (keys.length === 0) unnamed.push(pr);
+    else foreign.push({ pr, keys });
+  }
 
-  const foreign = candidates.filter((pr) => !kept.includes(pr)).map((pr) => ({ pr, keys: keysOf(pr) })).filter(({ keys }) => keys.length > 0);
+  const kept = own.length > 0 ? own : unnamed;
   if (foreign.length > 0) {
     logger.warn("Ignoring linked pull requests that belong to other issues", {
       issue: issue.key,
