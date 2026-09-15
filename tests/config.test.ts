@@ -16,6 +16,12 @@ describe("parseConfig", () => {
     assert.deepEqual(parseConfig({ ...valid, github }).github.excludeRepos, []);
   });
 
+  it("fills in the change-failure section and its fields when omitted", () => {
+    const { changeFailure: _omitted, ...withoutSection } = valid;
+    assert.deepEqual(parseConfig(withoutSection).changeFailure, { settlingDays: 14, keylessAttributionDays: 3, regressionLabel: "regression" });
+    assert.equal(parseConfig({ ...valid, changeFailure: { settlingDays: 7 } }).changeFailure.keylessAttributionDays, 3, "a partial section keeps the other defaults");
+  });
+
   it("rejects a blank repo name in excludeRepos with a readable message", () => {
     assert.throws(
       () => parseConfig({ ...valid, github: { ...valid.github, excludeRepos: [""] } }),

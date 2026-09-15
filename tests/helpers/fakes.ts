@@ -238,3 +238,39 @@ export class FakeJiraSource implements JiraSource {
     return this.linked[issueId] ?? [];
   }
 }
+
+/** A release-notes line as GitHub generates it for a pull request in `kato-app/<repo>`. */
+export function releaseNote(repo: string, n: number, title: string, by = "kato-jm"): string {
+  return `* ${title} by @${by} in https://github.com/kato-app/${repo}/pull/${n}`;
+}
+
+/**
+ * The scenario the change-failure tests share, fresh on every call.
+ *
+ * kato: v70.0 (Feb 1) -> v71.0 (Feb 10) -> v71.0.1 patch with a keyed hotfix (Feb 12) -> v72.0 (Mar 1)
+ *       -> v73.0 with a key-less hotfix (Mar 2) -> v74.0 with a revert, 10 days later (Mar 12) -> v75.0 (Mar 28, nothing to fix)
+ * kato-settings: s1 (Feb 5) -> s2 (Feb 20) with a hotfix naming a key Jira does not know.
+ * Jira: GR-9 (the keyed hotfix) was raised while v70.0 was live; GR-210 is a labelled regression fixed by kato#720 in v72.0.
+ */
+export function changeFailureScenario(): { github: FakeGitHubSource; jira: FakeJiraSource } {
+  const github = new FakeGitHubSource({
+    kato: [
+      release({ id: 75, tag_name: "v75.0", published_at: "2026-03-28T10:00:00Z", body: releaseNote("kato", 750, "GR-11 feature") }),
+      release({ id: 74, tag_name: "v74.0", published_at: "2026-03-12T10:00:00Z", body: releaseNote("kato", 740, 'Revert "GR-5 experiment"') }),
+      release({ id: 73, tag_name: "v73.0", published_at: "2026-03-02T10:00:00Z", body: releaseNote("kato", 730, "Hotfix broken login", "sam") }),
+      release({ id: 72, tag_name: "v72.0", published_at: "2026-03-01T10:00:00Z", body: releaseNote("kato", 720, "GR-7 feature") }),
+      release({ id: 711, tag_name: "v71.0.1", published_at: "2026-02-12T10:00:00Z", body: releaseNote("kato", 711, "GR-9: Hotfix null pointer") }),
+      release({ id: 71, tag_name: "v71.0", published_at: "2026-02-10T10:00:00Z", body: releaseNote("kato", 710, "GR-8 feature") }),
+      release({ id: 70, tag_name: "v70.0", published_at: "2026-02-01T10:00:00Z", body: releaseNote("kato", 700, "GR-6 feature") }),
+    ],
+    "kato-settings": [
+      release({ id: 2, tag_name: "s2", published_at: "2026-02-20T10:00:00Z", body: releaseNote("kato-settings", 20, "GR-999 hotfix settings", "jo") }),
+      release({ id: 1, tag_name: "s1", published_at: "2026-02-05T10:00:00Z", body: releaseNote("kato-settings", 10, "GR-3 feature") }),
+    ],
+  });
+  const jira = new FakeJiraSource([], { "210": [linkedPullRequest("https://github.com/kato-app/kato/pull/720")] }, undefined, [], [
+    jiraIssueSummary({ key: "GR-9", createdAt: new Date("2026-02-05T09:00:00Z") }),
+    jiraIssueSummary({ key: "GR-210", createdAt: new Date("2026-02-11T09:00:00Z"), labels: ["regression"] }),
+  ]);
+  return { github, jira };
+}

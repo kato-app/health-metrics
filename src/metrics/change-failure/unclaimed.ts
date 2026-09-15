@@ -1,5 +1,5 @@
 import { compareRows, type CollectContext, type MetricRow } from "../../core/metric.js";
-import { formatSheetDate, startOfUtcDay } from "../../core/sheet-date.js";
+import { formatSheetDate } from "../../core/sheet-date.js";
 import { repoFullName } from "../../sources/github/source.js";
 import type { UnclaimedRemediation } from "./remediations.js";
 import { buildRemediationReport, type ChangeFailureOptions, type ChangeFailureSources } from "./report.js";
@@ -25,6 +25,6 @@ export function toRow(unclaimed: UnclaimedRemediation): MetricRow {
  * the row on the next run. `--full` changes nothing here.
  */
 export async function collectUnclaimedHotfixes(sources: ChangeFailureSources, options: ChangeFailureOptions, context: CollectContext): Promise<MetricRow[]> {
-  const { report } = await buildRemediationReport(sources, options, startOfUtcDay(options.startDate), context.logger);
+  const { report } = await buildRemediationReport(sources, options, context.logger);
   return report.unclaimed.map(toRow).sort(compareRows("released_at", "repo", "tag", "evidence"));
 }

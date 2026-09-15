@@ -25,8 +25,10 @@ const SIGNALS: readonly RemediationSignal[] = ["hotfix", "revert", "patch_tag", 
 
 /**
  * How far behind the newest `released_at` in the sheet we re-examine releases.
- * Rows are only written once a release has settled, so a normal run has little
- * to catch up on; the window covers a run that was skipped for a while.
+ * A skipped run needs no grace, since the watermark does not move until rows
+ * are written; the window covers a release that entered the index late, such
+ * as a prerelease promoted to a full release after the fact. `--full` covers
+ * anything older.
  */
 export const DEFAULT_GRACE_DAYS = 30;
 
@@ -38,8 +40,8 @@ export interface CollectOptions extends ChangeFailureOptions {
 
 export function toRow(release: ReleaseRef, remediations: readonly Remediation[]): MetricRow {
   const evidence = (signal: RemediationSignal) => remediations.filter((r) => r.signal === signal).map((r) => r.evidence).join("; ") || null;
-  const first = remediations.length ? new Date(Math.min(...remediations.map((r) => r.at.getTime()))) : null;
-  const remediatedBy = [...new Set(remediations.flatMap((r) => (r.remediatedBy ? [r.remediatedBy.tag] : [])))];
+  const first = remediations.map((r) => r.at).sort((a, b) => a.getTime() - b.getTime())[0];
+  const remediatedBy = new Set(remediations.map((r) => r.remediatedBy?.tag).filter((tag) => tag !== undefined));
   return {
     released_at: formatSheetDate(release.publishedAt),
     repo: repoFullName(release.repo),
@@ -49,7 +51,7 @@ export function toRow(release: ReleaseRef, remediations: readonly Remediation[])
     revert: evidence("revert"),
     patch_tag: evidence("patch_tag"),
     jira_regression: evidence("jira_regression"),
-    remediated_by: remediatedBy.join(", ") || null,
+    remediated_by: [...remediatedBy].join(", ") || null,
     first_remediation_at: first ? formatSheetDate(first) : null,
     days_to_remediation: first ? calendarDays(release.publishedAt, first) : null,
   };
@@ -74,9 +76,11 @@ export async function collectChangeFailure(sources: ChangeFailureSources, option
   const watermark = context.full ? undefined : sheetWatermark;
   const graceMs = (options.graceDays ?? DEFAULT_GRACE_DAYS) * MS_PER_DAY;
   const since = watermark ? new Date(Math.max(startDate.getTime(), watermark.getTime() - graceMs)) : startDate;
+  // Same shape as `releaseKey`, built from the sheet's own columns.
   const known = new Set(existingRows.map((row) => `${row.repo}@${row.tag}`));
 
-  const { index, report } = await buildRemediationReport(sources, options, startDate, logger);
+  // Attribution needs every release since the start date, even when only the newest are written.
+  const { index, report } = await buildRemediationReport(sources, options, logger);
 
   const rows: MetricRow[] = [];
   let unsettled = 0;
@@ -85,13 +89,17 @@ export async function collectChangeFailure(sources: ChangeFailureSources, option
       unsettled += 1;
       continue;
     }
-    if (release.publishedAt < since || known.has(releaseKey(release))) continue;
-    rows.push(toRow(release, report.byRelease.get(releaseKey(release)) ?? []));
+    if (release.publishedAt < since) continue;
+    const key = releaseKey(release);
+    if (known.has(key)) continue;
+    rows.push(toRow(release, report.byRelease.get(key) ?? []));
   }
 
   logger.info("Judged releases", {
     releases: index.releases.length,
     unsettled,
+    watermark: watermark?.toISOString() ?? null,
+    known: known.size,
     added: rows.length,
     failed: rows.filter((r) => r.failed === true).length,
     bySignal: Object.fromEntries(SIGNALS.map((s) => [s, rows.filter((r) => r[s] !== null).length])),

@@ -159,7 +159,7 @@ async function attributePullRequest(pr: ShippedPullRequest, timeline: ReleaseTim
   if (!previous) return { reason: `no earlier release of ${repoFullName(fixing.repo)} is indexed` };
   const ageDays = (fixing.publishedAt.getTime() - previous.publishedAt.getTime()) / MS_PER_DAY;
   if (ageDays > options.keylessAttributionDays) {
-    return { reason: `no issue key, and the previous release ${previous.tag} is ${ageDays.toFixed(1)} days older than the ${options.keylessAttributionDays}-day limit` };
+    return { reason: `no known issue key, and the previous release ${previous.tag} is ${ageDays.toFixed(1)} days older than the ${options.keylessAttributionDays}-day limit` };
   }
   return { failed: previous };
 }

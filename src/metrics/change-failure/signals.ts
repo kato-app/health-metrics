@@ -74,9 +74,7 @@ function patchLevel(base: readonly number[], tag: string): number | undefined {
 
 /** `v68`, `v68.0` and `v68.0.0` are the same version. */
 function sameVersion(a: readonly number[], b: readonly number[]): boolean {
-  const x = withoutTrailingZeros(a);
-  const y = withoutTrailingZeros(b);
-  return x.length === y.length && x.every((n, i) => n === y[i]);
+  return withoutTrailingZeros(a).join(".") === withoutTrailingZeros(b).join(".");
 }
 
 function withoutTrailingZeros(parts: readonly number[]): readonly number[] {

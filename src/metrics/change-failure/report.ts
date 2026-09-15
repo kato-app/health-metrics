@@ -1,4 +1,5 @@
 import type { JiraProject } from "../../config/schema.js";
+import { startOfUtcDay } from "../../core/sheet-date.js";
 import type { Logger } from "../../logging/logger.js";
 import type { GitHubSource, RepoRef } from "../../sources/github/source.js";
 import type { JiraSource } from "../../sources/jira/source.js";
@@ -21,13 +22,13 @@ export interface ChangeFailureOptions {
   readonly regressionLabel: string;
 }
 
-/** The release index since `startDate` and every remediation attributed within it. */
+/** The release index since `options.startDate` and every remediation attributed within it. */
 export async function buildRemediationReport(
   sources: ChangeFailureSources,
   options: ChangeFailureOptions,
-  startDate: Date,
   logger: Logger,
 ): Promise<{ index: ReleaseIndex; report: RemediationReport }> {
+  const startDate = startOfUtcDay(options.startDate);
   const index = await buildReleaseIndex(sources.github, options.repos, startDate, logger);
   const report = await findRemediations(
     index,
