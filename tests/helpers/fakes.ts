@@ -24,6 +24,7 @@ export const validConfig: Config = {
     excludedStatuses: ["Archived"],
     excludedIssueTypes: ["Epic"],
   },
+  changeFailure: { settlingDays: 14, keylessAttributionDays: 3, regressionLabel: "regression" },
   logging: { file: "logs/app.log" },
 };
 

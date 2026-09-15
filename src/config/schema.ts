@@ -38,6 +38,16 @@ export const configSchema = z.object({
     /** Issue type names (case-insensitive) that are containers rather than work, e.g. Epic; such issues are never measured. */
     excludedIssueTypes: z.array(z.string().min(1)).default(["Epic"]),
   }),
+  changeFailure: z
+    .object({
+      /** A release is only judged once this many days have passed, so late remediation is caught. */
+      settlingDays: z.number().int().min(0).default(14),
+      /** A hotfix without an issue key is pinned on the previous release only if that release is at most this many days older. */
+      keylessAttributionDays: z.number().int().min(0).default(3),
+      /** Jira label marking a bug as a regression caused by a recent release. Affects Version counts too. */
+      regressionLabel: z.string().min(1).default("regression"),
+    })
+    .prefault({}),
   logging: z.object({
     /** Project-relative path of the JSON log file that is appended to on every run. */
     file: z.string().min(1),

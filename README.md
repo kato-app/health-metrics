@@ -34,6 +34,9 @@ cp .env.example .env   # then fill in the values
 | `jira.excludedStatuses` | Status names (case-insensitive) meaning "shelved rather than delivered"; such issues are never measured even if their resolution is Done. Optional; defaults to `["Archived"]`. |
 | `jira.excludedIssueTypes` | Issue type names (case-insensitive) that are containers rather than work; such issues are never measured even when a pull request names them. Optional; defaults to `["Epic"]`. |
 | `jira.projects` | Jira projects to collect issues from, each as `{ "key": "GR", "team": "Kato Growth" }`. Only these projects are queried; metrics that read Jira write the team name to the sheet alongside the project key. |
+| `changeFailure.settlingDays` | A release is judged for change failure only once this many days have passed since it was published, so late remediation is caught. Optional; defaults to `14`. |
+| `changeFailure.keylessAttributionDays` | A hotfix with no issue key is pinned on the previous release only if that release is at most this many days older. Optional; defaults to `3`. |
+| `changeFailure.regressionLabel` | Jira label that marks a bug as a regression caused by a recent release. A bug with an Affects Version counts too. Optional; defaults to `"regression"`. |
 | `logging.file` | Project-relative path of the JSON log file, appended to on every run. |
 
 ## CLI
@@ -230,6 +233,40 @@ A **snapshot** of every pull request shipped in a published release since `start
 - `Jira issue has no linked pull request`: the title names a configured issue, but Jira shows no development information for it, so the link never happened. Usually the branch or title was edited after the fact; re-saving the title or adding the key to a commit fixes it. A title naming several issues counts as linked if any of them is linked in Jira.
 
 Branch-sync and version-cut pull requests such as "Main to Release", "Release for v70.7", "v73.15 Release", "kato v76.3", "Update release branch with main" or "Merge pull request #…" are never listed; a bare version or "Release …" must be the whole title, and a word before a version is only a version cut when the version carries its `v`, so "V2 endpoints", "Node 22" and "Phase 2 release" are still listed. Matching is tolerant of GitHub's branch-derived titles, so `Gr 272 add users` counts as `GR-272`; the project's first letter must be upper case so that "Retry at 3 seconds" does not read as `AT-3`. Rows are ordered oldest release first, then by repository and number.
+
+### change-failure
+
+One row per **published release** in every collected repository (the same releases as deployment-frequency), saying whether that release turned out to need remediation and how we know. Change failure rate is the share of rows with `failed` = TRUE, computed in the sheet per week with the same LET pattern as the other metrics.
+
+**What counts as a failure.** There is no incident tool or incident process, so remediation is inferred from what the teams already do, in this order of trust:
+
+1. **Hotfix or revert pull requests.** A later release whose notes list a PR titled "hotfix" (any spelling: `Hotfix`, `HOTFIX`, `hot fix`) or starting with "Revert". If the title carries a Jira issue key that exists, the failed release is the one that was live in that repository when the issue was created. Otherwise, if the fixing release is a patch tag, its base failed. Otherwise the release immediately before the fix failed, but only if it is at most `changeFailure.keylessAttributionDays` older; anything older is not guessed at and goes to [unclaimed-hotfixes](#unclaimed-hotfixes) instead.
+2. **Patch tags.** A release tagged `vX.Y.Z` with a non-zero `Z` patches `vX.Y` (or `vX.Y.(Z-1)`); `v68.0.1` patches `v68`. Two-component tags are ordinary releases.
+3. **Jira regressions.** A Bug carrying the `changeFailure.regressionLabel` label or an Affects Version, with a merged pull request in a collected repository: the release live in that repository when the bug was created failed. Bugs with neither marker are ignored, because a customer-found bug can be months old. Regression bugs with no linked pull request cannot be tied to a repository and are skipped with a log line. Nobody sets either marker yet, so this signal starts empty.
+
+Rollbacks are invisible: the GitHub deployments API is used only for per-ticket dev environments, and production deployments are not recorded anywhere we can read.
+
+**Columns**, in order:
+
+| Column | Meaning |
+| --- | --- |
+| `released_at` | When the release was published (UTC). The watermark. |
+| `repo` | `owner/name`. |
+| `tag` | Release tag. `repo` + `tag` identify the row. |
+| `failed` | TRUE when any signal below is present. |
+| `hotfix` | Hotfix pull requests attributed to this release, as `owner/repo#n "title"`, `;`-separated. Blank if none. |
+| `revert` | Revert pull requests attributed to this release, same format. |
+| `patch_tag` | Patch releases of this release, e.g. `v73.36.1`. |
+| `jira_regression` | Regression bug keys attributed to this release. |
+| `remediated_by` | Distinct tags of the releases that shipped the fixes. |
+| `first_remediation_at` | Earliest remediation: the fixing release's publish time, or the regression bug's creation. |
+| `days_to_remediation` | `first_remediation_at − released_at`, calendar days to two decimals. |
+
+**Settling and delta.** A release is judged only once `changeFailure.settlingDays` have passed since it was published, so each run writes the releases that settled since the last one. The watermark is the newest `released_at` in the tab; each run re-examines releases from the watermark minus 30 days and skips those already present, so a skipped week is caught up. A remediating release is itself a change and gets its own row, which may in turn be flagged. Rows are ordered oldest release first.
+
+### unclaimed-hotfixes
+
+A **snapshot** of every hotfix, revert or patch release since `startDate` that [change-failure](#change-failure) could not pin on an earlier release, with the reason: a title with no issue key whose previous release is too old, an issue key Jira does not know or that predates every indexed release, or a patch tag whose base was released before `startDate`. Columns: released_at, repo, tag, signal, evidence, author, reason. Adding the issue key to the pull request title fixes the first two kinds on the next run; the third clears itself as the start date recedes. `--full` changes nothing here because a snapshot already covers everything.
 
 ## Adding a metric
 
